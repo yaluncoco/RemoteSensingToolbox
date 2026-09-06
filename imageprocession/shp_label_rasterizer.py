@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from Toolbox.task_support import bind_task
+from Toolbox.file_io import atomic_output
+
 import os
 import traceback
 from dataclasses import dataclass
@@ -594,9 +597,10 @@ def rasterize_shp_labels(
     check_cancelled()
     output_path = Path(output_tif_path)
     emit(55, "开始按类别像素值分块栅格化...")
-    rasterize_to_tif_by_windows(
+    with atomic_output(output_path) as temporary_output:
+        rasterize_to_tif_by_windows(
         shapes=shapes,
-        output_path=output_path,
+        output_path=temporary_output,
         meta=meta,
         height=height,
         width=width,
@@ -605,7 +609,8 @@ def rasterize_shp_labels(
         all_touched=all_touched,
         progress_callback=progress_callback,
         should_cancel=should_cancel,
-    )
+        )
+        check_cancelled()
 
     emit(100, "SHP 标签栅格化完成。")
     return ShpRasterizeResult(
@@ -962,14 +967,13 @@ class ShpLabelRasterizerWindow(QWidget):
             encoding,
         )
         self.worker.progress_updated.connect(self.update_progress)
-        self.worker.finished_signal.connect(self.on_finished)
+        bind_task(self, "worker", self.on_finished)
         self.worker.start()
 
     def update_progress(self, value: int, message: str) -> None:
         self.progress_bar.setValue(value)
         self.log_edit.append(message)
         self.log_edit.ensureCursorVisible()
-        QApplication.processEvents()
 
     def on_finished(self, message: str, message_type: str) -> None:
         self._update_start_state()
@@ -981,23 +985,9 @@ class ShpLabelRasterizerWindow(QWidget):
         else:
             QMessageBox.critical(self, "操作失败", message)
 
-    def closeEvent(self, event) -> None:
-        if self.worker and self.worker.isRunning():
-            reply = QMessageBox.question(
-                self,
-                "退出确认",
-                "SHP 转 TIF 正在进行中，确定要退出吗？",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply == QMessageBox.Yes:
-                self.worker.requestInterruption()
-                self.worker.wait()
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
+    def closeEvent(self, event):
+        # TaskBinding defers close while the worker is still running.
+        event.accept()
 
 
 if __name__ == "__main__":

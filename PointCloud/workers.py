@@ -1,3 +1,6 @@
+from PointCloud.file_io import read_point_cloud, write_point_cloud
+from Toolbox.file_io import atomic_output
+from PointCloud.processing import downsample_points, SamplingCancelled
 # workers.py
 import os
 import time
@@ -101,7 +104,7 @@ class PepperProcessWorker(QThread):
     def load_point_cloud(self, filepath):
         if not self._is_running: return None
         try:
-            pcd = o3d.io.read_point_cloud(filepath)
+            pcd = read_point_cloud(filepath)
             if not pcd.has_points():
                 if filepath.lower().endswith('.xyz'):
                     try:
@@ -130,7 +133,7 @@ class PepperProcessWorker(QThread):
         if not self._is_running: return False
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            o3d.io.write_point_cloud(output_path, pcd)
+            write_point_cloud(output_path, pcd)
             return True
         except Exception as write_err:
             self.status_signal.emit(f"保存文件 {os.path.basename(output_path)} 时出错: {write_err}")
@@ -544,7 +547,7 @@ class CheckShapeWorker(QThread):
                 self.status_signal.emit("NPY检查已中止。")
                 return
 
-            data = np.load(self.npy_file_path)
+            data = np.load(self.npy_file_path, mmap_mode="r", allow_pickle=False)
 
             if not self._is_running:
                 self.status_signal.emit("NPY检查已中止。")
@@ -562,7 +565,7 @@ class CheckShapeWorker(QThread):
             elif data.ndim == 1 and data.shape[0] > 0:
                 shape_info += f"前5个元素: {data[:min(5, data.shape[0])]}\n"  # Handle arrays smaller than 5
             elif data.ndim > 1 and data.shape[0] > 0:
-                shape_info += f"第一个元素/行 (前5列): {data[0, :min(5, data.shape[1])]}\n"  # Handle rows with < 5 columns
+                shape_info += f"前10个元素: {data.flat[:min(10, data.size)]}\n"  # Handle rows with < 5 columns
 
             self.result_signal.emit(shape_info)
             self.status_signal.emit("NPY文件信息检查完成。")
@@ -776,7 +779,7 @@ class GenericConvertWorker(QThread):
         self.status_signal.emit(f"正在转换文件: {filename} 到 {self.target_format.upper()}...");
         self.progress_signal.emit(10)
         try:
-            pcd = o3d.io.read_point_cloud(self.input_path)
+            pcd = read_point_cloud(self.input_path)
             if not pcd.has_points():
                 if self.input_path.lower().endswith('.xyz'):
                     try:
@@ -850,7 +853,7 @@ class GenericConvertWorker(QThread):
             output_path = os.path.join(self.output_dir, output_filename)
             self.status_signal.emit(f"[{i + 1}/{total_files}] 转换: {filename}")
             try:
-                pcd = o3d.io.read_point_cloud(input_file)
+                pcd = read_point_cloud(input_file)
                 if not pcd.has_points():
                     if input_file.lower().endswith('.xyz'):
                         try:
@@ -902,9 +905,9 @@ class GenericConvertWorker(QThread):
     def write_point_cloud(self, pcd, output_path):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         if self.target_format == "pcd":
-            o3d.io.write_point_cloud(output_path, pcd, write_ascii=False)
+            write_point_cloud(output_path, pcd, write_ascii=False)
         elif self.target_format == "ply":
-            o3d.io.write_point_cloud(output_path, pcd, write_ascii=True)  # PLY default ascii for wider compatibility
+            write_point_cloud(output_path, pcd, write_ascii=True)  # PLY default ascii for wider compatibility
         elif self.target_format == "xyz":
             points = np.asarray(pcd.points);
             data_to_save = points;
@@ -926,7 +929,7 @@ class GenericConvertWorker(QThread):
 def _load_txt_pointcloud(filepath):
     """加载TXT格式的点云文件 (Helper function for worker)"""
     try:
-        data = np.loadtxt(filepath)
+        data = np.loadtxt(filepath, ndmin=2)
         if data.size == 0:
             raise ValueError("点云文件为空")
         if data.ndim == 1:
@@ -945,12 +948,13 @@ def _load_txt_pointcloud(filepath):
 def _save_txt_pointcloud(filepath, points, colors_or_features=None):
     """保存点云为TXT格式 (Helper function for worker)"""
     try:
-        data = np.hstack([points, colors_or_features]) if colors_or_features is not None else points
-        # Ensure directory exists before saving
-        output_dir = os.path.dirname(filepath)
-        if output_dir:
-            os.makedirs(output_dir, exist_ok=True)
-        np.savetxt(filepath, data, fmt='%.6f')
+        with atomic_output(filepath) as temporary:
+            with temporary.open("w", encoding="utf-8") as output:
+                for start in range(0, len(points), 65536):
+                    rows = points[start:start + 65536]
+                    if colors_or_features is not None:
+                        rows = np.hstack([rows, colors_or_features[start:start + 65536]])
+                    np.savetxt(output, rows, fmt="%.10g")
         return True
     except Exception as e:
         raise IOError(f"保存点云失败 {os.path.basename(filepath)}: {e}")
@@ -1001,6 +1005,8 @@ class DownsampleWorker(QThread):
         self.progress_signal.emit(10)
 
         try:
+            if Path(self.input_path).resolve() == Path(self.output_path).resolve():
+                raise ValueError("输出路径不能覆盖输入文件。")
             points, features = _load_txt_pointcloud(self.input_path)
             if points is None: return
 
@@ -1032,9 +1038,15 @@ class DownsampleWorker(QThread):
         output_folder = self.output_path
 
         try:
-            txt_files = [
-                os.path.join(r, f) for r, d, fs in os.walk(input_folder) for f in fs if f.lower().endswith('.txt')
-            ]
+            output_root = Path(output_folder).resolve()
+            if Path(input_folder).resolve() == output_root:
+                raise ValueError("批量输出目录不能与输入目录相同。")
+            txt_files = []
+            for directory, folders, filenames in os.walk(input_folder):
+                folders[:] = [name for name in folders if (Path(directory) / name).resolve() != output_root]
+                txt_files.extend(os.path.join(directory, name) for name in sorted(filenames)
+                                 if name.lower().endswith(".txt"))
+            txt_files.sort()
         except Exception as e:
             self.status_signal.emit(f"错误: 无法读取输入文件夹 {input_folder}: {e}")
             return
@@ -1078,68 +1090,13 @@ class DownsampleWorker(QThread):
             self.status_signal.emit(f"批量处理完成。成功: {success_count}, 失败/跳过: {total_files - success_count}")
 
     def _perform_downsampling(self, points, features):
-        """根据self.method和self.params执行具体的降采样算法"""
-        original_count = len(points)
-        method = self.method
-
-        if method == 'random':
-            target = self.params.get('target_points', 10000)
-            if original_count <= target: return points, features
-            indices = np.random.choice(original_count, target, replace=False)
-
-        elif method == 'uniform':
-            target = self.params.get('target_points', 10000)
-            if original_count <= target: return points, features
-            step = max(1, original_count // target)
-            indices = np.arange(0, original_count, step)[:target]
-
-        elif method == 'farthest':
-            target = self.params.get('target_points', 10000)
-            if original_count <= target: return points, features
-
-            n_pts = len(points)
-            indices = np.zeros(target, dtype=int)
-            distances = np.full(n_pts, np.inf)
-            point_norms = np.einsum('ij,ij->i', points, points)
-            indices[0] = np.random.randint(0, n_pts)
-            last_selected_pt_coords = points[indices[0]]
-
-            for i in range(1, target):
-                if i % 100 == 0:
-                    if not self._is_running:
-                        return None, None
-                    self.progress_signal.emit(30 + int((i / target) * 40))
-                dist_to_last = (
-                    point_norms
-                    - 2.0 * np.dot(points, last_selected_pt_coords)
-                    + float(np.dot(last_selected_pt_coords, last_selected_pt_coords))
-                )
-                distances = np.minimum(distances, dist_to_last)
-                new_idx = np.argmax(distances)
-                indices[i] = new_idx
-                last_selected_pt_coords = points[new_idx]
-
-        elif method == 'voxel':
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(points)
-            if features is not None and features.shape[1] >= 3:
-                colors = features[:, :3]
-                if np.max(colors) > 1.0: colors = colors / 255.0
-                pcd.colors = o3d.utility.Vector3dVector(np.clip(colors, 0, 1))
-
-            voxel_size = self.params.get('voxel_size', 0.01)
-            down_pcd = pcd.voxel_down_sample(voxel_size)
-
-            ds_points = np.asarray(down_pcd.points)
-            ds_features = np.asarray(down_pcd.colors) if down_pcd.has_colors() else None
-            self.status_signal.emit(f"体素降采样后点数: {len(ds_points):,}")
-            return ds_points, ds_features
-
-        else:
-            self.status_signal.emit(f"错误: 未知的降采样方法 '{method}'")
+        try:
+            sampled, sampled_features = downsample_points(
+                points, features, self.method, self.params,
+                should_cancel=lambda: not self._is_running,
+                progress=self.progress_signal.emit,
+            )
+            self.status_signal.emit(f"下采样后点数: {len(sampled):,}")
+            return sampled, sampled_features
+        except SamplingCancelled:
             return None, None
-
-        downsampled_points = points[indices]
-        downsampled_features = features[indices] if features is not None else None
-        self.status_signal.emit(f"降采样后点数: {len(downsampled_points):,}")
-        return downsampled_points, downsampled_features

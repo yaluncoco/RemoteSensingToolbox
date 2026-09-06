@@ -3,14 +3,21 @@ from __future__ import annotations
 import os
 import sys
 import traceback
+import logging
+import argparse
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, Iterable
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QIcon
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from PyQt5.QtCore import Qt, QThread, QTimer, QSettings, pyqtSignal
+from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -19,12 +26,15 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QProgressBar,
+    QShortcut,
     QScrollArea,
     QSizePolicy,
     QSpacerItem,
     QStyle,
     QStyleFactory,
     QVBoxLayout,
+    QTextBrowser,
     QWidget,
 )
 
@@ -33,10 +43,27 @@ try:
 except ImportError:
     from tool_registry import TOOLS, ToolSpec, load_tool_class
 
+from Toolbox.task_support import bind_task
+from Toolbox.version import APP_ID, APP_TITLE, APP_VERSION
 
-APP_TITLE = "遥感与点云综合工具箱"
+
 CATEGORIES = ("全部", "图像处理", "点云处理", "数据集")
 _STANDARD_ICON_CACHE: dict[str, QIcon] = {}
+
+
+class ToolLoader(QThread):
+    finished_signal = pyqtSignal(object, object)
+
+    def __init__(self, spec):
+        super().__init__()
+        self.spec = spec
+
+    def run(self):
+        try:
+            self.finished_signal.emit(load_tool_class(self.spec), None)
+        except Exception as exc:
+            logging.exception("Failed to load tool %s", self.spec.id)
+            self.finished_signal.emit(None, exc)
 
 
 def resource_path(relative_path: str) -> str:
@@ -129,20 +156,47 @@ class ToolCard(QFrame):
 
 
 class ToolboxWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, persist_settings=True):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.setMinimumSize(1080, 720)
-        self.resize(1180, 760)
+        self.setMinimumSize(760, 560)
+        self.resize(1120, 760)
+        self.settings = QSettings(APP_ID, APP_ID) if persist_settings else None
+        self._loader = None
+        self._closing_children = False
+        self.render_timer = QTimer(self)
+        self.render_timer.setSingleShot(True)
+        self.render_timer.setInterval(120)
+        self.render_timer.timeout.connect(self.render_tools)
         self.open_windows: Dict[str, QWidget] = {}
         self.active_category = "全部"
         self.category_buttons: Dict[str, QPushButton] = {}
         self.search_index = {
-            spec.id: " ".join((spec.title, spec.category, spec.summary, *spec.tags)).lower()
+            spec.id: " ".join((spec.id, spec.title, spec.category, spec.summary, *spec.tags)).casefold()
             for spec in TOOLS
         }
 
         self._init_ui()
+        self.tool_cards = {}
+        for spec in TOOLS:
+            card = ToolCard(spec, self.tools_view)
+            card.open_requested.connect(self.open_tool)
+            self.tool_cards[spec.id] = card
+        self.empty_label = QLabel("没有找到匹配的工具，请尝试其他关键词。", self.tools_view)
+        self.empty_label.setObjectName("emptyLabel")
+        self.empty_label.setWordWrap(True)
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.empty_label.hide()
+        self.search_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        self.search_shortcut.activated.connect(self.search_edit.setFocus)
+        if self.settings:
+            geometry = self.settings.value("geometry")
+            if geometry:
+                self.restoreGeometry(geometry)
+            category = self.settings.value("category", "全部")
+            if category in CATEGORIES:
+                self.active_category = category
+                self.category_buttons[category].setChecked(True)
         self._center_on_screen()
         self.render_tools()
 
@@ -157,11 +211,16 @@ class ToolboxWindow(QMainWindow):
         shell_layout.addWidget(self._create_content(), 1)
         self.setCentralWidget(shell)
         self.statusBar().showMessage("就绪")
+        self.loading_indicator = QProgressBar()
+        self.loading_indicator.setRange(0, 0)
+        self.loading_indicator.setMaximumWidth(120)
+        self.loading_indicator.hide()
+        self.statusBar().addPermanentWidget(self.loading_indicator)
 
     def _create_sidebar(self) -> QWidget:
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(248)
+        sidebar.setFixedWidth(210)
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(18, 22, 18, 18)
         layout.setSpacing(12)
@@ -172,6 +231,7 @@ class ToolboxWindow(QMainWindow):
 
         subtitle = QLabel("图像处理 · 数据集 · 点云")
         subtitle.setObjectName("sidebarSubtitle")
+        subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
         layout.addSpacing(14)
@@ -193,7 +253,12 @@ class ToolboxWindow(QMainWindow):
 
         layout.addStretch(1)
 
-        hint = QLabel("新增工具：在 Toolbox/tool_registry.py 中追加 ToolSpec 即可接入。")
+        help_button = QPushButton("使用说明")
+        help_button.setObjectName("categoryButton")
+        help_button.clicked.connect(self.open_manual)
+        layout.addWidget(help_button)
+
+        hint = QLabel(f"双击卡片打开工具\nCtrl+K 快速搜索\n版本 {APP_VERSION}")
         hint.setObjectName("sidebarHint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -211,13 +276,14 @@ class ToolboxWindow(QMainWindow):
         layout.setContentsMargins(28, 24, 28, 22)
         layout.setSpacing(16)
 
-        top_row = QHBoxLayout()
+        top_row = QVBoxLayout()
         title_block = QVBoxLayout()
         title_block.setSpacing(4)
         title = QLabel(APP_TITLE)
         title.setObjectName("pageTitle")
         title_block.addWidget(title)
-        subtitle = QLabel("统一入口保留原有功能，按场景快速打开需要的工具。")
+        subtitle = QLabel("从影像切片到点云处理，快速找到需要的工具。")
+        subtitle.setWordWrap(True)
         subtitle.setObjectName("pageSubtitle")
         title_block.addWidget(subtitle)
         top_row.addLayout(title_block, 1)
@@ -226,9 +292,9 @@ class ToolboxWindow(QMainWindow):
         self.search_edit.setObjectName("searchEdit")
         self.search_edit.setPlaceholderText("搜索工具、格式或关键词")
         self.search_edit.setClearButtonEnabled(True)
-        self.search_edit.setMinimumWidth(300)
-        self.search_edit.textChanged.connect(self.render_tools)
-        top_row.addWidget(self.search_edit, 0, Qt.AlignTop)
+        self.search_edit.setMinimumWidth(220)
+        self.search_edit.textChanged.connect(lambda _text: self.render_timer.start())
+        top_row.addWidget(self.search_edit)
         layout.addLayout(top_row)
 
         self.summary_label = QLabel()
@@ -246,6 +312,7 @@ class ToolboxWindow(QMainWindow):
         self.tools_layout.setHorizontalSpacing(14)
         self.tools_layout.setVerticalSpacing(14)
         scroll.setWidget(self.tools_view)
+        self.tool_scroll = scroll
         layout.addWidget(scroll, 1)
 
         return content
@@ -255,6 +322,13 @@ class ToolboxWindow(QMainWindow):
         if not screen:
             return
         available = screen.availableGeometry()
+        self.resize(min(self.width(), available.width()), min(self.height(), available.height()))
+        if self.settings and self.settings.value("geometry"):
+            frame = self.frameGeometry()
+            if frame.intersects(available):
+                self.move(max(available.left(), min(self.x(), available.right() - frame.width() + 1)),
+                          max(available.top(), min(self.y(), available.bottom() - frame.height() + 1)))
+                return
         frame = self.frameGeometry()
         frame.moveCenter(available.center())
         self.move(frame.topLeft())
@@ -267,12 +341,12 @@ class ToolboxWindow(QMainWindow):
         self.render_tools()
 
     def filtered_tools(self) -> Iterable[ToolSpec]:
-        query = self.search_edit.text().strip().lower()
+        words = self.search_edit.text().casefold().split()
         for spec in TOOLS:
             if self.active_category != "全部" and spec.category != self.active_category:
                 continue
             haystack = self.search_index[spec.id]
-            if query and query not in haystack:
+            if not all(word in haystack for word in words):
                 continue
             yield spec
 
@@ -281,29 +355,33 @@ class ToolboxWindow(QMainWindow):
             item = self.tools_layout.takeAt(0)
             widget = item.widget()
             if widget:
-                widget.deleteLater()
+                widget.hide()
+
+        for row in range(len(TOOLS) + 1):
+            self.tools_layout.setRowStretch(row, 0)
+        for column in range(3):
+            self.tools_layout.setColumnStretch(column, 0)
 
         tools = list(self.filtered_tools())
         total = len(TOOLS)
         self.summary_label.setText(f"当前显示 {len(tools)} / {total} 个工具")
 
         if not tools:
-            empty = QLabel("没有找到匹配的工具。")
-            empty.setObjectName("emptyLabel")
-            empty.setAlignment(Qt.AlignCenter)
-            self.tools_layout.addWidget(empty, 0, 0, 1, 2)
+            self.tools_layout.addWidget(self.empty_label, 0, 0)
+            self.empty_label.show()
             self.tools_layout.setRowStretch(1, 1)
             return
 
-        columns = 2
+        width = self.tool_scroll.viewport().width()
+        columns = 3 if width >= 1120 else 2 if width >= 690 else 1
         for index, spec in enumerate(tools):
-            card = ToolCard(spec)
-            card.open_requested.connect(self.open_tool)
+            card = self.tool_cards[spec.id]
             row, col = divmod(index, columns)
             self.tools_layout.addWidget(card, row, col)
+            card.show()
 
         row_count = (len(tools) + columns - 1) // columns
-        self.tools_layout.addItem(QSpacerItem(1, 1, QSizePolicy.Minimum, QSizePolicy.Expanding), row_count, 0)
+        self.tools_layout.setRowStretch(row_count, 1)
         for column in range(columns):
             self.tools_layout.setColumnStretch(column, 1)
 
@@ -316,28 +394,78 @@ class ToolboxWindow(QMainWindow):
             self.set_status(f"已切换到：{spec.title}")
             return
 
-        self.set_status(f"正在打开：{spec.title}")
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        if self._loader is not None:
+            self.set_status("正在加载工具，请稍候…")
+            return
+
+        self.set_status(f"正在打开：{spec.title}，首次加载可能需要几秒")
+        self.loading_indicator.show()
+        self.tools_view.setEnabled(False)
+        self._loader = ToolLoader(spec)
+        bind_task(self, "_loader", lambda window_class, error: self._tool_loaded(spec, window_class, error))
+        self._loader.start()
+
+    def _tool_loaded(self, spec, window_class, error):
+        self.loading_indicator.hide()
+        self.tools_view.setEnabled(True)
         try:
-            window_class = load_tool_class(spec)
+            if error is not None:
+                raise error
             window = window_class()
-            window.setAttribute(Qt.WA_DeleteOnClose, False)
-            window.destroyed.connect(lambda _=None, tool_id=spec.id: self.open_windows.pop(tool_id, None))
+            window.setAttribute(Qt.WA_DeleteOnClose, True)
+            window.destroyed.connect(lambda _=None, tool_id=spec.id: self._tool_closed(tool_id))
             self.open_windows[spec.id] = window
             window.show()
             window.activateWindow()
             window.raise_()
             self.set_status(f"已打开：{spec.title}")
         except Exception as exc:
-            traceback.print_exc()
+            logging.exception("Failed to open tool %s", spec.id)
             self.set_status(f"打开失败：{spec.title}")
             QMessageBox.critical(
                 self,
                 "工具启动失败",
                 f"无法打开「{spec.title}」。\n\n错误信息：{exc}",
             )
-        finally:
-            QApplication.restoreOverrideCursor()
+
+    def _tool_closed(self, tool_id):
+        self.open_windows.pop(tool_id, None)
+        if self._closing_children:
+            QTimer.singleShot(0, self.close)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "tool_cards"):
+            self.render_timer.start()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self.render_tools)
+
+    def closeEvent(self, event):
+        refused = []
+        for window in list(self.open_windows.values()):
+            if not window.close():
+                refused.append(window)
+        if refused:
+            self._closing_children = all(bool(window.property("closing_task")) for window in refused)
+            event.ignore()
+            return
+        if self.settings:
+            self.settings.setValue("geometry", self.saveGeometry())
+            self.settings.setValue("category", self.active_category)
+        event.accept()
+
+    def open_manual(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("使用说明")
+        dialog.resize(760, 620)
+        layout = QVBoxLayout(dialog)
+        browser = QTextBrowser()
+        manual = Path(resource_path("quick_start.md"))
+        browser.setMarkdown(manual.read_text(encoding="utf-8") if manual.exists() else "请参阅项目目录中的使用手册。")
+        layout.addWidget(browser)
+        dialog.exec_()
 
     def set_status(self, message: str) -> None:
         self.statusBar().showMessage(message, 5000)
@@ -355,10 +483,39 @@ def apply_application_style(app: QApplication) -> None:
 
 
 def main() -> int:
-    app = QApplication(sys.argv)
+    parser = argparse.ArgumentParser(description=APP_TITLE)
+    parser.add_argument("--version", action="version", version=APP_VERSION)
+    parser.add_argument("--self-test", action="store_true", help="Run offline checks and exit")
+    parser.add_argument("--report", type=Path, help="Self-test JSON report path")
+    parser.add_argument("--screenshots", type=Path, help="Self-test screenshots directory")
+    parser.add_argument("--check-renderer", action="store_true", help="Include native OpenGL rendering in the self-test")
+    args = parser.parse_args()
+
+    from Toolbox.tool_registry import configure_runtime_environment
+    configure_runtime_environment()
+    log_dir = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "state"))) / APP_ID / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+                        handlers=[RotatingFileHandler(log_dir / "toolbox.log", maxBytes=2_000_000,
+                                                      backupCount=2, encoding="utf-8")])
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    app = QApplication([sys.argv[0]])
+    app.setOrganizationName(APP_ID)
     app.setApplicationName(APP_TITLE)
+    app.setApplicationVersion(APP_VERSION)
     app.setFont(QFont("Microsoft YaHei", 10))
     apply_application_style(app)
+
+    if args.self_test:
+        from Toolbox.self_test import run_self_test
+        report = args.report or log_dir / "self-test.json"
+        return run_self_test(app, report, args.screenshots, args.check_renderer)
+
+    def handle_exception(exc_type, value, tb):
+        logging.error("Unhandled exception", exc_info=(exc_type, value, tb))
+        QMessageBox.critical(None, "操作异常", f"{value}\n\n详细信息已保存到：{log_dir / 'toolbox.log'}")
+    sys.excepthook = handle_exception
 
     window = ToolboxWindow()
     window.setWindowIcon(window.style().standardIcon(QStyle.SP_ComputerIcon))

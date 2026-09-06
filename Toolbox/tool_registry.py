@@ -128,6 +128,7 @@ def configure_runtime_environment() -> None:
 
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    os.environ.setdefault("OPEN3D_DISABLE_WEB_VISUALIZER", "true")
 
     frozen_base_path = Path(getattr(sys, "_MEIPASS", sys.prefix))
     prefix_path = Path(sys.prefix)
@@ -150,12 +151,16 @@ def configure_runtime_environment() -> None:
 
     gdal_data_candidates = [
         frozen_base_path / "gdal_data",
+        frozen_base_path / "rasterio" / "gdal_data",
+        frozen_base_path / "fiona" / "gdal_data",
         frozen_base_path / "Library" / "share" / "gdal",
         prefix_path / "Library" / "share" / "gdal",
         conda_base_path / "Library" / "share" / "gdal",
     ]
     proj_data_candidates = [
         frozen_base_path / "proj_data",
+        frozen_base_path / "rasterio" / "proj_data",
+        frozen_base_path / "fiona" / "proj_data",
         frozen_base_path / "Library" / "share" / "proj",
         prefix_path / "Library" / "share" / "proj",
         conda_base_path / "Library" / "share" / "proj",
@@ -166,7 +171,7 @@ def configure_runtime_environment() -> None:
         ("PROJ_LIB", proj_data_candidates),
         ("PROJ_DATA", proj_data_candidates),
     ]:
-        if os.environ.get(env_name):
+        if os.environ.get(env_name) and not getattr(sys, "frozen", False):
             continue
         for path in candidates:
             if path.exists():

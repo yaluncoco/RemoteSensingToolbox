@@ -1,10 +1,13 @@
 import os
+import math
+import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
-from PIL import Image
 from PyQt5.QtCore import QThread, Qt, pyqtSignal
+from Toolbox.file_io import atomic_output
+from Toolbox.task_support import bind_task
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -43,39 +46,51 @@ TIF_FILTER = "TIFF Files (*.tif *.tiff);;All Files (*)"
 OUTPUT_FORMATS = ("PNG", "JPG", "RGB TIF")
 
 
-def normalize_band_to_uint8(band: np.ndarray, stretch_percent: float) -> np.ndarray:
-    valid = np.asarray(band)
-    finite_mask = np.isfinite(valid)
-    if not finite_mask.any():
-        return np.zeros(valid.shape, dtype=np.uint8)
+RGB_BLOCK_SIZE = 512
+STRETCH_SAMPLE_PIXELS = 1_048_576
 
-    finite_values = valid[finite_mask].astype(np.float32, copy=False)
-    if stretch_percent > 0:
-        low = np.percentile(finite_values, stretch_percent)
-        high = np.percentile(finite_values, 100.0 - stretch_percent)
-    else:
-        low = float(np.nanmin(finite_values))
-        high = float(np.nanmax(finite_values))
 
+class ConversionCancelled(Exception):
+    pass
+
+
+def _valid_pixels(band):
+    data = np.ma.getdata(band)
+    return ~np.ma.getmaskarray(band) & np.isfinite(data)
+
+
+def _band_limits(band, stretch_percent):
+    values = np.ma.getdata(band)[_valid_pixels(band)]
+    if not values.size:
+        return 0.0, 0.0
+    if stretch_percent:
+        return tuple(np.percentile(values, [stretch_percent, 100.0 - stretch_percent]))
+    return float(values.min()), float(values.max())
+
+
+def normalize_band_to_uint8(band: np.ndarray, stretch_percent: float, limits=None) -> np.ndarray:
+    if not math.isfinite(stretch_percent) or not 0 <= stretch_percent < 50:
+        raise ValueError("百分位拉伸必须在 0 到 50 之间。")
+    low, high = limits if limits is not None else _band_limits(band, stretch_percent)
+    result = np.zeros(band.shape, dtype=np.uint8)
     if high <= low:
-        return np.zeros(valid.shape, dtype=np.uint8)
-
-    scaled = (valid.astype(np.float32) - low) * (255.0 / (high - low))
-    scaled = np.clip(scaled, 0, 255)
-    scaled[~finite_mask] = 0
-    return scaled.astype(np.uint8)
+        return result
+    valid = _valid_pixels(band)
+    scaled = (np.ma.getdata(band)[valid].astype(np.float64) - low) * (255.0 / (high - low))
+    result[valid] = np.clip(scaled, 0, 255).astype(np.uint8)
+    return result
 
 
 def build_rgb_array(src, red_band: int, green_band: int, blue_band: int, stretch_percent: float) -> np.ndarray:
     if src.count == 1:
-        gray = normalize_band_to_uint8(src.read(1), stretch_percent)
+        gray = normalize_band_to_uint8(src.read(1, masked=True), stretch_percent)
         return np.dstack([gray, gray, gray])
 
     band_indexes = [red_band, green_band, blue_band]
     if any(index < 1 or index > src.count for index in band_indexes):
         raise ValueError(f"波段编号超出范围。当前 TIF 共有 {src.count} 个波段。")
 
-    channels = [normalize_band_to_uint8(src.read(index), stretch_percent) for index in band_indexes]
+    channels = [normalize_band_to_uint8(src.read(index, masked=True), stretch_percent) for index in band_indexes]
     return np.dstack(channels)
 
 
@@ -98,36 +113,105 @@ def convert_tif_to_rgb(
     blue_band: int = 3,
     stretch_percent: float = 2.0,
     preserve_georef: bool = True,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    should_cancel: Optional[Callable[[], bool]] = None,
 ) -> None:
     if not RASTERIO_AVAILABLE:
         raise RuntimeError(f"rasterio 依赖不可用：{RASTERIO_IMPORT_ERROR}")
 
+    from rasterio.enums import ColorInterp, Resampling
+    from rasterio.shutil import copy as copy_raster
+    from rasterio.windows import Window
+
     output_format = output_format.upper()
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-
-    with rasterio.open(input_path) as src:
-        rgb = build_rgb_array(src, red_band, green_band, blue_band, stretch_percent)
-
-        if output_format == "RGB TIF":
-            meta = src.meta.copy() if preserve_georef else {
-                "driver": "GTiff",
-                "height": src.height,
-                "width": src.width,
-                "count": 3,
-                "dtype": "uint8",
-            }
-            meta.update(driver="GTiff", count=3, dtype="uint8", compress="lzw")
-            with rasterio.open(output_path, "w", **meta) as dst:
-                dst.write(np.moveaxis(rgb, -1, 0))
-            return
-
-    image = Image.fromarray(rgb, mode="RGB")
-    if output_format == "JPG":
-        image.save(output_path, "JPEG", quality=95)
-    elif output_format == "PNG":
-        image.save(output_path, "PNG")
-    else:
+    if output_format not in OUTPUT_FORMATS:
         raise ValueError(f"不支持的输出格式：{output_format}")
+    if not math.isfinite(stretch_percent) or not 0 <= stretch_percent < 50:
+        raise ValueError("百分位拉伸必须在 0 到 50 之间。")
+    if Path(input_path).resolve() == Path(output_path).resolve() or (
+        Path(output_path).exists() and os.path.samefile(input_path, output_path)
+    ):
+        raise ValueError("输出路径不能与输入文件相同。")
+
+    def check_cancel():
+        if should_cancel and should_cancel():
+            raise ConversionCancelled()
+
+    def emit(value, message):
+        if progress_callback:
+            progress_callback(value, message)
+
+    check_cancel()
+    with rasterio.Env(GDAL_TIFF_INTERNAL_MASK=True, GDAL_PAM_ENABLED=False, GDAL_CACHEMAX=64_000_000):
+        with rasterio.open(input_path) as src, atomic_output(output_path) as output_tmp:
+            bands = [1, 1, 1] if src.count == 1 else [red_band, green_band, blue_band]
+            if any(index < 1 or index > src.count for index in bands):
+                raise ValueError(f"波段编号超出范围。当前 TIF 共有 {src.count} 个波段。")
+            unique_bands = list(dict.fromkeys(bands))
+            total = math.ceil(src.width / RGB_BLOCK_SIZE) * math.ceil(src.height / RGB_BLOCK_SIZE)
+
+            def windows():
+                for y in range(0, src.height, RGB_BLOCK_SIZE):
+                    for x in range(0, src.width, RGB_BLOCK_SIZE):
+                        yield Window(x, y, min(RGB_BLOCK_SIZE, src.width - x), min(RGB_BLOCK_SIZE, src.height - y))
+
+            limits = {}
+            if stretch_percent:
+                # A bounded, deterministic overview gives one global stretch, without tile seams.
+                scale = min(1.0, math.sqrt(STRETCH_SAMPLE_PIXELS / (src.width * src.height)))
+                shape = (max(1, int(src.height * scale)), max(1, int(src.width * scale)))
+                for index in unique_bands:
+                    check_cancel()
+                    sample = src.read(index, out_shape=shape, masked=True, resampling=Resampling.nearest)
+                    limits[index] = _band_limits(sample, stretch_percent)
+                emit(25, "已计算全图百分位拉伸范围（有效像素采样）")
+            else:
+                limits = {index: (math.inf, -math.inf) for index in unique_bands}
+                last_percent = -1
+                for number, window in enumerate(windows(), 1):
+                    check_cancel()
+                    for index in unique_bands:
+                        band = src.read(index, window=window, masked=True)
+                        if _valid_pixels(band).any():
+                            low, high = _band_limits(band, 0)
+                            limits[index] = (min(limits[index][0], low), max(limits[index][1], high))
+                    percent = int(number / total * 25)
+                    if percent != last_percent:
+                        emit(percent, "正在分块统计有效像素的最小/最大值")
+                        last_percent = percent
+
+            meta = dict(driver="GTiff", height=src.height, width=src.width,
+                        count=3, dtype="uint8", compress="lzw", tiled=True,
+                        blockxsize=RGB_BLOCK_SIZE, blockysize=RGB_BLOCK_SIZE, BIGTIFF="IF_SAFER")
+            if output_format == "RGB TIF" and preserve_georef:
+                meta.update(crs=src.crs, transform=src.transform)
+
+            with tempfile.TemporaryDirectory(prefix=".rgb-", dir=output_tmp.parent) as scratch:
+                raster_path = output_tmp if output_format == "RGB TIF" else Path(scratch) / "rgb.tif"
+                with rasterio.open(raster_path, "w", **meta) as dst:
+                    dst.colorinterp = (ColorInterp.red, ColorInterp.green, ColorInterp.blue)
+                    last_percent = -1
+                    for number, window in enumerate(windows(), 1):
+                        check_cancel()
+                        tile = src.read(bands, window=window, masked=True)
+                        valid = np.all(_valid_pixels(tile), axis=0)
+                        rgb = np.stack([normalize_band_to_uint8(tile[channel], stretch_percent, limits[index])
+                                        for channel, index in enumerate(bands)])
+                        rgb[:, ~valid] = 0
+                        dst.write(rgb, window=window)
+                        if output_format == "RGB TIF":
+                            dst.write_mask(valid.astype(np.uint8) * 255, window=window)
+                        percent = 25 + int(number / total * 65)
+                        if percent != last_percent:
+                            emit(percent, f"正在转换分块 {number}/{total}")
+                            last_percent = percent
+                check_cancel()
+                if output_format != "RGB TIF":
+                    emit(92, f"正在编码 {output_format} 文件")
+                    options = {"QUALITY": 95} if output_format == "JPG" else {}
+                    copy_raster(raster_path, output_tmp, driver="JPEG" if output_format == "JPG" else "PNG", **options)
+                check_cancel()
+    emit(100, "转换完成")
 
 
 class TifRgbConvertThread(QThread):
@@ -162,10 +246,15 @@ class TifRgbConvertThread(QThread):
                 return
 
             total = len(self.inputs)
+            outputs = [default_output_path(path, self.output_dir, self.output_format) for path in self.inputs]
+            normalized = [os.path.normcase(str(Path(path).resolve())) for path in outputs]
+            input_paths = {os.path.normcase(str(Path(path).resolve())) for path in self.inputs}
+            if len(set(normalized)) != len(normalized) or input_paths.intersection(normalized):
+                raise ValueError("批量文件的输出路径存在冲突，请使用独立输出目录并检查同名 TIF/TIFF。")
             converted = 0
             for index, input_path in enumerate(self.inputs, start=1):
                 if self.isInterruptionRequested():
-                    self.finished_signal.emit("操作已取消。", "info")
+                    self.finished_signal.emit("操作已取消。", "warning")
                     return
 
                 output_path = default_output_path(input_path, self.output_dir, self.output_format)
@@ -182,6 +271,9 @@ class TifRgbConvertThread(QThread):
                     blue_band=self.blue_band,
                     stretch_percent=self.stretch_percent,
                     preserve_georef=self.preserve_georef,
+                    should_cancel=self.isInterruptionRequested,
+                    progress_callback=lambda percent, message, offset=index - 1: self.progress_updated.emit(
+                        int((offset + percent / 100) / total * 100), message),
                 )
                 converted += 1
                 self.progress_updated.emit(
@@ -190,6 +282,8 @@ class TifRgbConvertThread(QThread):
                 )
 
             self.finished_signal.emit(f"TIF 转 RGB 完成，共输出 {converted} 个文件。", "info")
+        except ConversionCancelled:
+            self.finished_signal.emit("操作已取消，未完成的输出已清理。", "warning")
         except Exception as exc:
             self.finished_signal.emit(f"转换失败：{exc}", "error")
 
@@ -282,8 +376,13 @@ class TifRgbConverterWindow(QWidget):
         self.progress_bar.setValue(0)
         main_layout.addWidget(self.progress_bar)
 
+        self.cancel_btn = QPushButton("取消转换")
+        self.cancel_btn.clicked.connect(self.cancel_conversion)
+        main_layout.addWidget(self.cancel_btn, alignment=Qt.AlignRight)
+
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
+        self.log_edit.document().setMaximumBlockCount(1000)
         self.log_edit.setPlaceholderText("转换日志将显示在此处...")
         self.log_edit.setFixedHeight(150)
         main_layout.addWidget(self.log_edit)
@@ -354,6 +453,13 @@ class TifRgbConverterWindow(QWidget):
         enabled = RASTERIO_AVAILABLE and self.convert_thread is None
         self.single_start_btn.setEnabled(enabled and bool(self.single_input_path and self.single_output_dir))
         self.batch_start_btn.setEnabled(enabled and bool(self.batch_input_dir and self.batch_output_dir))
+        self.cancel_btn.setEnabled(self.convert_thread is not None and not self.convert_thread.isInterruptionRequested())
+
+    def cancel_conversion(self):
+        if self.convert_thread:
+            self.convert_thread.requestInterruption()
+            self.cancel_btn.setEnabled(False)
+            self.log_edit.append("正在取消，当前文件将在安全结束后清理…")
 
     def select_single_input(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择 TIF 文件", "", TIF_FILTER)
@@ -438,7 +544,6 @@ class TifRgbConverterWindow(QWidget):
         self.progress_bar.setValue(0)
         self.log_edit.clear()
         self.log_edit.append("开始转换...")
-        QApplication.processEvents()
 
         self.convert_thread = TifRgbConvertThread(
             inputs=inputs,
@@ -451,7 +556,7 @@ class TifRgbConverterWindow(QWidget):
             preserve_georef=self.preserve_georef_checkbox.isChecked(),
         )
         self.convert_thread.progress_updated.connect(self.update_progress)
-        self.convert_thread.finished_signal.connect(self.on_conversion_finished)
+        bind_task(self, "convert_thread", self.on_conversion_finished)
         self._update_buttons()
         self.convert_thread.start()
 
@@ -459,7 +564,6 @@ class TifRgbConverterWindow(QWidget):
         self.progress_bar.setValue(value)
         self.log_edit.append(message)
         self.log_edit.ensureCursorVisible()
-        QApplication.processEvents()
 
     def on_conversion_finished(self, message: str, msg_type: str):
         self.log_edit.append(f"--------------------\n{msg_type.upper()}: {message}")
@@ -470,23 +574,10 @@ class TifRgbConverterWindow(QWidget):
         if msg_type == "info":
             self.progress_bar.setValue(100)
             QMessageBox.information(self, "转换完成", message)
+        elif msg_type == "warning":
+            QMessageBox.information(self, "转换已取消", message)
         else:
             QMessageBox.critical(self, "转换失败", message)
 
     def closeEvent(self, event):
-        if self.convert_thread and self.convert_thread.isRunning():
-            reply = QMessageBox.question(
-                self,
-                "退出确认",
-                "TIF 转 RGB 正在进行中，确定要退出吗？",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply == QMessageBox.Yes:
-                self.convert_thread.requestInterruption()
-                self.convert_thread.wait(3000)
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
+        event.accept()

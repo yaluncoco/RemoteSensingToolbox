@@ -1,3 +1,5 @@
+from PointCloud.file_io import read_point_cloud, write_point_cloud
+from Toolbox.task_support import bind_task
 import sys
 import os
 import threading
@@ -13,6 +15,8 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout
                              QSpinBox, QDoubleSpinBox, QFormLayout, QTextEdit, QLineEdit, QComboBox)
 
 from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QScrollArea
+from Toolbox.version import APP_VERSION
 from PyQt5.QtGui import QFont, QIcon
 
 # Import worker classes and visualization functions
@@ -72,9 +76,9 @@ class PointCloudProcessor(QMainWindow):
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle('点云工具包 v1.6')
-        self.setMinimumSize(1180, 820)
-        self.setGeometry(100, 100, 1240, 860)
+        self.setWindowTitle('点云处理工作台')
+        self.setMinimumSize(840, 580)
+        self.setGeometry(100, 100, 1120, 760)
         self.setStyleSheet("""
             QMainWindow { background-color: #F4F6F8; }
             QWidget { font-family: "Microsoft YaHei", "Segoe UI", Arial; font-size: 10pt; color: #1F2933; }
@@ -162,22 +166,22 @@ class PointCloudProcessor(QMainWindow):
         main_layout.addWidget(status_group)
         main_layout.addStretch(1)
 
-        footer_label = QLabel("点云工具包 v1.6")
+        footer_label = QLabel(f"遥感与点云综合工具箱 {APP_VERSION}")
         footer_label.setAlignment(Qt.AlignRight)
         footer_label.setStyleSheet("color: #94A3B8; margin-top: 8px; font-size: 9pt;")
         main_layout.addWidget(footer_label)
 
         self.stacked_widget = QStackedWidget()
-        self.stacked_widget.addWidget(main_widget)  # Index 0: Main Page
+        self.stacked_widget.addWidget(self.scroll_page(main_widget))  # Index 0: Main Page
 
         pepper_page = self.create_pepper_page()  # Index 1
-        self.stacked_widget.addWidget(pepper_page)
+        self.stacked_widget.addWidget(self.scroll_page(pepper_page))
         convert_page = self.create_convert_page()  # Index 2
-        self.stacked_widget.addWidget(convert_page)
+        self.stacked_widget.addWidget(self.scroll_page(convert_page))
         analysis_page = self.create_prediction_analysis_page()  # Index 3
-        self.stacked_widget.addWidget(analysis_page)
+        self.stacked_widget.addWidget(self.scroll_page(analysis_page))
         downsample_page = self.create_downsample_page()  # Index 4
-        self.stacked_widget.addWidget(downsample_page)
+        self.stacked_widget.addWidget(self.scroll_page(downsample_page))
 
         shell_widget = QWidget()
         shell_layout = QHBoxLayout(shell_widget)
@@ -188,6 +192,14 @@ class PointCloudProcessor(QMainWindow):
 
         self.setCentralWidget(shell_widget)
         self.statusBar().showMessage("就绪")
+
+    @staticmethod
+    def scroll_page(widget):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(widget)
+        return scroll
 
     def create_sidebar(self):
         sidebar = QFrame()
@@ -207,7 +219,7 @@ class PointCloudProcessor(QMainWindow):
         title.setStyleSheet("color: #FFFFFF;")
         layout.addWidget(title)
 
-        version = QLabel("v1.6")
+        version = QLabel(f"v{APP_VERSION}")
         version.setStyleSheet("color: #9CA3AF; margin-bottom: 14px;")
         layout.addWidget(version)
 
@@ -1052,7 +1064,7 @@ class PointCloudProcessor(QMainWindow):
         method_combo = QComboBox()
         method_combo.addItems(["随机采样 (Random)", "体素网格 (Voxel)", "均匀采样 (Uniform)", "最远点采样 (Farthest)"])
         method_combo.setToolTip(
-            "选择下采样算法。\n- 随机/均匀/最远点: 速度快，控制最终点数。\n- 体素网格: 保持点云均匀分布，通过体素大小控制密度。")
+            "随机/均匀采样：速度快，按目标点数取样。\n最远点采样：分布均匀，大文件耗时较长。\n体素网格：每个体素保留一个原始点，保留全部颜色、标签和特征列。")
         param_layout.addRow("采样方法:", method_combo)
 
         # Parameter stack
@@ -1497,7 +1509,7 @@ class PointCloudProcessor(QMainWindow):
         self.clear_worker_connections(self.pepper_worker)
         self.pepper_worker.progress_signal.connect(lambda value, pb=progress_bar: pb.setValue(value))
         self.pepper_worker.status_signal.connect(lambda msg, sl=status_label: sl.setText(msg))
-        self.pepper_worker.finished_signal.connect(lambda mt=method_type: self.on_pepper_single_finished(mt))
+        bind_task(self, "pepper_worker", lambda mt=method_type: self.on_pepper_single_finished(mt))
         self.pepper_worker.result_signal.connect(self.on_pepper_process_result)
         progress_bar.setValue(0);
         status_label.setText(f"正在初始化 ({method_type.upper()})...");
@@ -1530,7 +1542,7 @@ class PointCloudProcessor(QMainWindow):
         self.clear_worker_connections(self.pepper_worker)
         self.pepper_worker.progress_signal.connect(lambda value, pb=progress_bar: pb.setValue(value))
         self.pepper_worker.status_signal.connect(lambda msg, sl=status_label: sl.setText(msg))
-        self.pepper_worker.finished_signal.connect(lambda mt=method_type: self.on_pepper_batch_finished(mt))
+        bind_task(self, "pepper_worker", lambda mt=method_type: self.on_pepper_batch_finished(mt))
         progress_bar.setValue(0);
         status_label.setText(f"正在初始化批量处理 ({method_type.upper()})...");
         self.set_ui_processing_state(True);
@@ -1624,7 +1636,7 @@ class PointCloudProcessor(QMainWindow):
         try:
             if update_status_func: update_status_func("准备对比: 加载原始点云...")
             QApplication.processEvents()
-            original_pcd = o3d.io.read_point_cloud(self.original_file_path_for_comparison)
+            original_pcd = read_point_cloud(self.original_file_path_for_comparison)
             if not original_pcd.has_points():
                 if self.original_file_path_for_comparison.lower().endswith('.xyz'):
                     data = np.loadtxt(self.original_file_path_for_comparison)
@@ -1672,7 +1684,7 @@ class PointCloudProcessor(QMainWindow):
         self.clear_worker_connections(self.generic_convert_worker)
         self.generic_convert_worker.progress_signal.connect(self.generic_single_progress.setValue)
         self.generic_convert_worker.status_signal.connect(self.generic_single_status.setText)
-        self.generic_convert_worker.finished_signal.connect(self.on_generic_single_finished)
+        bind_task(self, "generic_convert_worker", self.on_generic_single_finished)
         self.generic_single_progress.setValue(0);
         self.generic_single_status.setText(f"准备转换为 {target_format.upper()}...");
         self.set_ui_processing_state(True);
@@ -1707,7 +1719,7 @@ class PointCloudProcessor(QMainWindow):
         self.clear_worker_connections(self.generic_convert_worker)
         self.generic_convert_worker.progress_signal.connect(self.generic_batch_progress.setValue)
         self.generic_convert_worker.status_signal.connect(self.generic_batch_status.setText)
-        self.generic_convert_worker.finished_signal.connect(self.on_generic_batch_finished)
+        bind_task(self, "generic_convert_worker", self.on_generic_batch_finished)
         self.generic_batch_progress.setValue(0);
         self.generic_batch_status.setText(f"准备批量转换为 {target_format.upper()}...");
         self.set_ui_processing_state(True);
@@ -1752,7 +1764,7 @@ class PointCloudProcessor(QMainWindow):
         self.clear_worker_connections(self.scannet_convert_worker)
         self.scannet_convert_worker.progress_signal.connect(self.scannet_progress_bar.setValue)
         self.scannet_convert_worker.status_signal.connect(self.scannet_status_label.setText)
-        self.scannet_convert_worker.finished_signal.connect(self.on_scannet_conversion_finished)
+        bind_task(self, "scannet_convert_worker", self.on_scannet_conversion_finished)
         self.scannet_progress_bar.setValue(0);
         self.scannet_status_label.setText("正在初始化 ScanNet 转换...");
         self.set_ui_processing_state(True);
@@ -1784,7 +1796,7 @@ class PointCloudProcessor(QMainWindow):
         self.clear_worker_connections(self.check_shape_worker)
         self.check_shape_worker.result_signal.connect(self.npy_shape_result_textedit.setText)
         self.check_shape_worker.status_signal.connect(self.npy_shape_status_label.setText)
-        self.check_shape_worker.finished_signal.connect(self.on_npy_shape_check_finished)
+        bind_task(self, "check_shape_worker", self.on_npy_shape_check_finished)
         self.npy_shape_result_textedit.clear();
         self.npy_shape_status_label.setText("正在检查...");
         self.set_ui_processing_state(True);
@@ -1828,7 +1840,7 @@ class PointCloudProcessor(QMainWindow):
         self.clear_worker_connections(self.merge_prediction_worker)
         self.merge_prediction_worker.status_signal.connect(self.merge_status_label.setText)
         self.merge_prediction_worker.result_signal.connect(self.on_merge_prediction_result)  # To update vis input path
-        self.merge_prediction_worker.finished_signal.connect(self.on_merge_prediction_finished)
+        bind_task(self, "merge_prediction_worker", self.on_merge_prediction_finished)
         self.merge_status_label.setText("开始合并...");
         self.set_ui_processing_state(True);
         self.merge_prediction_worker.start()
@@ -1941,7 +1953,7 @@ class PointCloudProcessor(QMainWindow):
         self.clear_worker_connections(self.downsample_worker)
         self.downsample_worker.status_signal.connect(status_label.setText)
         self.downsample_worker.progress_signal.connect(progress_bar.setValue)
-        self.downsample_worker.finished_signal.connect(self.on_downsample_finished)
+        bind_task(self, "downsample_worker", self.on_downsample_finished)
 
         progress_bar.setValue(0)
         status_label.setText(f"正在初始化下采样 ({method_text})...")
@@ -1977,7 +1989,7 @@ class PointCloudProcessor(QMainWindow):
         self.statusBar().showMessage(f"正在加载: {os.path.basename(file_path)}...");
         QApplication.processEvents()
         try:
-            pcd = o3d.io.read_point_cloud(file_path)
+            pcd = read_point_cloud(file_path)
             if not pcd.has_points():
                 if file_path.lower().endswith('.xyz'):
                     data = np.loadtxt(file_path);
@@ -2035,28 +2047,7 @@ class PointCloudProcessor(QMainWindow):
         self.visualization_thread.start()
 
     def closeEvent(self, event):
-        print("关闭应用程序请求...")
-        if self.is_worker_running():
-            worker = self.get_current_worker();
-            worker_name = type(worker).__name__ if worker else "未知任务"
-            reply = QMessageBox.question(self, '确认退出',
-                                         f"后台任务 '{worker_name}' 仍在运行。\n立即退出可能导致处理不完整。\n\n是否要停止任务并退出？",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.Yes:
-                print(f"正在停止 {worker_name} 并退出...")
-                if worker: worker.stop(); worker.wait(500)  # Give worker a bit of time
-                event.accept()
-            else:
-                print("退出取消，后台任务继续运行。"); event.ignore(); return
-
-        # Ensure any lingering visualization thread is handled (though daemon=True should help)
-        if self.visualization_thread and self.visualization_thread.is_alive():
-            print("可视化线程仍在运行，尝试关闭...")
-            # Open3D visualizer needs to be closed from its own thread usually or via its API if non-blocking.
-            # Since it's blocking in a daemon thread, exiting the app should terminate it.
-            # For a cleaner shutdown, one might need a more complex inter-thread communication to close the o3d window.
-
-        print("没有后台任务运行或已处理，正常退出。")
+        # Active tasks are stopped asynchronously by TaskBinding.
         event.accept()
 
 

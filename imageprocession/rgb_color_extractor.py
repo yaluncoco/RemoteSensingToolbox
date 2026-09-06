@@ -10,7 +10,8 @@ from typing import Optional
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 from PIL.Image import Resampling
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from Toolbox.task_support import bind_task
 from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
@@ -254,6 +255,21 @@ def detect_color_blocks(
     return ordered
 
 
+class ColorExtractThread(QThread):
+    finished_signal = pyqtSignal(object, object)
+
+    def __init__(self, image, params):
+        super().__init__()
+        self.image = image.copy()
+        self.params = params
+
+    def run(self):
+        try:
+            self.finished_signal.emit(detect_color_blocks(self.image, **self.params), None)
+        except Exception as exc:
+            self.finished_signal.emit(None, exc)
+
+
 class RgbColorExtractorWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -265,6 +281,7 @@ class RgbColorExtractorWindow(QWidget):
         self.image_path: Optional[str] = None
         self.image: Optional[Image.Image] = None
         self.blocks: list[ColorBlock] = []
+        self.extract_thread = None
 
         self._init_ui()
         self._update_actions()
@@ -421,8 +438,11 @@ class RgbColorExtractorWindow(QWidget):
         self.select_image_btn.setToolTip(tooltip or text)
 
     def _update_actions(self):
-        has_image = self.image is not None
-        has_blocks = bool(self.blocks)
+        busy = self.extract_thread is not None
+        has_image = self.image is not None and not busy
+        has_blocks = bool(self.blocks) and not busy
+        self.select_image_btn.setEnabled(not busy)
+        self.clipboard_btn.setEnabled(not busy)
         self.extract_btn.setEnabled(has_image)
         self.apply_categories_btn.setEnabled(has_blocks)
         self.copy_dict_btn.setEnabled(has_blocks)
@@ -466,12 +486,13 @@ class RgbColorExtractorWindow(QWidget):
         self._update_actions()
 
     def extract_blocks(self):
+        if self.extract_thread is not None:
+            return
         if self.image is None:
             QMessageBox.warning(self, "未选择图片", "请先选择图片或从剪贴板读取截图。")
             return
 
-        self.blocks = detect_color_blocks(
-            image=self.image,
+        params = dict(
             min_area=self.min_area_spin.value(),
             min_width=self.min_width_spin.value(),
             min_height=self.min_height_spin.value(),
@@ -479,6 +500,21 @@ class RgbColorExtractorWindow(QWidget):
             include_neutral=self.include_neutral_checkbox.isChecked(),
             sort_mode=self.sort_mode_combo.currentText(),
         )
+
+        self.extract_thread = ColorExtractThread(self.image, params)
+        bind_task(self, "extract_thread", self.on_extraction_finished)
+        self.status_label.setText("正在提取色块…")
+        self._update_actions()
+        self.extract_thread.start()
+
+    def on_extraction_finished(self, blocks, error):
+        self.extract_thread = None
+        if error is not None:
+            self.status_label.setText("色块提取失败")
+            self._update_actions()
+            QMessageBox.critical(self, "提取失败", str(error))
+            return
+        self.blocks = blocks
 
         self.populate_table()
         self.render_preview()

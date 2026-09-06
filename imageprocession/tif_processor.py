@@ -1,3 +1,7 @@
+from Toolbox.task_support import bind_task
+from Toolbox.file_io import atomic_output
+from contextlib import ExitStack
+from imageprocession.shp_label_rasterizer import rasterize_shp_labels, RasterizeCancelled
 # tif_processor.py
 import os
 import ast
@@ -89,164 +93,63 @@ class TifProcessThread(QThread):
 
     def run(self):
         if not FIONA_RASTERIO_AVAILABLE:
-            self.finished_signal.emit(
-                "错误：缺少必要的库 (fiona, rasterio)。请安装它们后重试。", "error")
+            self.finished_signal.emit("缺少 fiona/rasterio 依赖。", "error")
             return
-
         try:
-            self.progress_updated.emit(0, "开始处理 TIF 文件...")
+            labels = self.ordered_labels_list
+            if not labels or len(labels) > 255 or len(set(labels)) != len(labels):
+                raise ValueError("请输入 1 到 255 个不重复的类别名称；更多类别可使用 SHP 标签转 TIF 工具。")
+            for color in self.fixed_color_map_dict.values():
+                if len(color) != 3 or any(not isinstance(value, int) or not 0 <= value <= 255 for value in color):
+                    raise ValueError("每个类别颜色必须包含三个 0 到 255 的整数。")
+            if any(separator in value for value in (self.date_str, self.zone_id_str) for separator in ("/", "\\")):
+                raise ValueError("日期和区域编号不能包含路径分隔符。")
 
-            zone_str_formatted = f"Z{self.zone_id_str}"  # As per original script Z{id}
-            base_output_name = f"{self.date_str}-sbl-{zone_str_formatted.lower()}"  # e.g. 2021-10-07-sbl-z3
+            def check_cancel():
+                if self._is_interrupted:
+                    raise RasterizeCancelled()
 
-            out_fp_color = os.path.join(self.output_dir, f"{base_output_name}_labels_color_fixed.tif")
-            out_fp_id = os.path.join(self.output_dir, f"{base_output_name}_labels_id_fixed.tif")
-            out_fp_palette = os.path.join(self.output_dir, f"{base_output_name}_labels_palette_fixed.tif")
-
-            os.makedirs(self.output_dir, exist_ok=True)
-            self.progress_updated.emit(5, f"输出目录 '{self.output_dir}' 已确认/创建。")
-
-            # 1. Create label and color mappings
-            label_to_id = {label: idx + 1 for idx, label in enumerate(self.ordered_labels_list)}
-            id_to_label = {v: k for k, v in label_to_id.items()}
-
-            id_to_rgb: Dict[int, tuple[int, int, int]] = {}
-            for idx_val, label_name in id_to_label.items():
-                # Ensure color tuple, not list
-                color_list = self.fixed_color_map_dict.get(label_name, [255, 255, 255])
-                id_to_rgb[idx_val] = (color_list[0], color_list[1], color_list[2])
-            id_to_rgb[0] = (0, 0, 0)  # Background
-
-            mapping_info = "\n📋 类别ID→RGB颜色映射:\n"
-            for idx_val in sorted(id_to_label.keys()):
-                mapping_info += f"{idx_val:2d}: {id_to_label[idx_val]:20s} → RGB{id_to_rgb[idx_val]}\n"
-            mapping_info += " 0: background           → RGB(0, 0, 0)"
-            self.progress_updated.emit(10, mapping_info)
-            if self._is_interrupted: return
-
-            # 2. Read image metadata from input TIF
-            self.progress_updated.emit(15, f"正在读取TIF元数据: {self.tif_path}")
-            with rasterio.open(self.tif_path) as src:
-                meta = src.meta.copy()
-                height, width = src.height, src.width
-                transform = src.transform
-            self.progress_updated.emit(20, f"TIF元数据读取完成: Height={height}, Width={width}")
-            if self._is_interrupted: return
-
-            # 3. Rasterize vector data
-            self.progress_updated.emit(25, f"正在栅格化矢量数据: {self.gpkg_path}")
-            shapes = []
-            unknown_labels_found = []
-            with fiona.open(self.gpkg_path, 'r') as src_vec:
-                properties_schema = src_vec.schema.get("properties", {})
-                if self.label_field not in properties_schema:
-                    available_fields = ", ".join(properties_schema.keys()) or "无"
-                    self.finished_signal.emit(
-                        f"错误：矢量文件中没有类别字段 '{self.label_field}'。\n可用字段：{available_fields}",
-                        "error",
-                    )
-                    return
-                for i, feat in enumerate(src_vec):
-                    if self._is_interrupted: return
-                    label_value = feat["properties"].get(self.label_field)
-                    label = str(label_value) if label_value is not None else ""
-                    if label not in label_to_id:
-                        if label not in unknown_labels_found:
-                            unknown_labels_found.append(label)
-                            self.progress_updated.emit(25 + (i % 5),
-                                                       f"⚠️ 跳过未知标签: {label} (在矢量文件中找到，但未在有序标签列表或颜色映射中定义)")
-                        continue
-                    geom = feat["geometry"]
-                    shapes.append((geom, label_to_id[label]))
-
-            if not shapes:
-                self.finished_signal.emit(f"错误：在矢量文件中没有找到与所提供标签匹配的有效几何图形。", "error")
-                return
-            self.progress_updated.emit(40, f"读取了 {len(shapes)} 个有效几何图形。开始栅格化...")
-            if self._is_interrupted: return
-
-            id_raster = rasterize(
-                shapes=shapes,
-                out_shape=(height, width),
-                transform=transform,
-                fill=0,  # Background ID
-                dtype="uint8"
-            )
-            self.progress_updated.emit(50, "矢量数据已栅格化为ID图层。")
-            if self._is_interrupted: return
-
-            # 4. Output single-channel ID TIF
-            self.progress_updated.emit(55, f"正在保存单通道ID标签图: {out_fp_id}")
-            meta_id = meta.copy()
-            meta_id.update(count=1, dtype="uint8", compress="lzw", driver="GTiff")
-            with rasterio.open(out_fp_id, "w", **meta_id) as dst:
-                dst.write(id_raster, 1)
-            self.progress_updated.emit(65, "单通道ID标签图保存完成。")
-            if self._is_interrupted: return
-
-            # 5. Build RGB TIF
-            self.progress_updated.emit(70, "正在生成RGB彩色标签图...")
-            max_id = int(max(int(id_raster.max()), max(id_to_rgb.keys(), default=0)))
-            palette = np.zeros((max_id + 1, 3), dtype=np.uint8)
-            for idx_val, rgb_color_tuple in id_to_rgb.items():
-                if 0 <= idx_val <= max_id:
-                    palette[idx_val] = rgb_color_tuple
-            rgb_raster = np.moveaxis(palette[id_raster], -1, 0)
-            self.progress_updated.emit(75, "RGB彩色标签图生成完成。")
-            if self._is_interrupted: return
-
-            # 6. Write RGB TIF
-            self.progress_updated.emit(80, f"正在保存RGB彩色标签图: {out_fp_color}")
-            meta_color = meta.copy()
-            meta_color.update(count=3, dtype="uint8", compress="lzw", driver="GTiff")
-            with rasterio.open(out_fp_color, "w", **meta_color) as dst:
-                dst.write(rgb_raster[0], 1)
-                dst.write(rgb_raster[1], 2)
-                dst.write(rgb_raster[2], 3)
-            self.progress_updated.emit(85, "RGB彩色标签图保存完成。")
-            if self._is_interrupted: return
-
-            # 7. Generate P-mode TIF
-            self.progress_updated.emit(90, "正在生成调色板（P模式）标签图...")
-            palette_data = []
-            # Create a full 256-entry palette. IDs are 1-based, 0 is background.
-            for i in range(256):
-                rgb = id_to_rgb.get(i, (0, 0, 0))  # Default to black if ID not in map
-                palette_data.extend(rgb)
-
-            palette_img = PILImage.fromarray(id_raster, mode='P')
-            palette_img.putpalette(palette_data)
-            self.progress_updated.emit(95, f"正在保存调色板（P模式）标签图: {out_fp_palette}")
-            palette_img.save(out_fp_palette, format='TIFF',
-                             compression='tiff_lzw')  # Specify format and compression for PIL
-            self.progress_updated.emit(98, "调色板（P模式）标签图保存完成。")
-            if self._is_interrupted: return
-
-            final_message = (
-                "✅ 标签图生成完成！\n"
-                f"🗂️ 单通道标签图（训练用）: {out_fp_id}\n"
-                f"🌈 彩色可视化标签图      : {out_fp_color}\n"
-                f"🎨 调色板模式标签图（P） : {out_fp_palette}"
-            )
-            if unknown_labels_found:
-                final_message += f"\n\n⚠️ 注意：在矢量文件中找到但未处理的标签: {', '.join(unknown_labels_found)}"
-
-            self.progress_updated.emit(100, "所有处理完成。")
-            self.finished_signal.emit(final_message, "info")
-
-        except FileNotFoundError as e:
-            self.finished_signal.emit(f"文件未找到错误: {e}", "error")
-        except (fiona.errors.DriverError, rasterio.errors.RasterioIOError) as e:
-            self.finished_signal.emit(f"Fiona/Rasterio IO 错误: {e}", "error")
-        except UnidentifiedImageError as e:
-            self.finished_signal.emit(f"PIL 无法识别图像文件: {e}", "error")
-        except Exception as e:
-            self.progress_updated.emit(self.property("current_progress_value") or 50, f"发生错误: {e}")
-            traceback_str = traceback.format_exc()
-            self.finished_signal.emit(f"处理过程中发生未知错误: {e}\n详细信息:\n{traceback_str}", "error")
-        finally:
-            if self._is_interrupted:
-                self.finished_signal.emit("操作已由用户取消。", "info")
+            check_cancel()
+            base = f"{self.date_str}-sbl-z{self.zone_id_str}"
+            paths = [os.path.join(self.output_dir, base + suffix) for suffix in
+                     ("_labels_id_fixed.tif", "_labels_color_fixed.tif", "_labels_palette_fixed.tif")]
+            palette = np.zeros((256, 3), dtype=np.uint8)
+            for index, label in enumerate(labels, 1):
+                palette[index] = self.fixed_color_map_dict.get(label, [255, 255, 255])
+            self.progress_updated.emit(0, "开始分块栅格化与标签着色…")
+            with ExitStack() as stack:
+                id_path, color_path, palette_path = [stack.enter_context(atomic_output(path)) for path in paths]
+                result = rasterize_shp_labels(
+                    self.gpkg_path, self.tif_path, str(id_path), self.label_field, labels,
+                    should_cancel=lambda: self._is_interrupted,
+                    progress_callback=lambda value, message: self.progress_updated.emit(int(value * .65), message),
+                )
+                check_cancel()
+                with rasterio.open(id_path) as src:
+                    color_meta = src.profile.copy()
+                    color_meta.update(count=3, nodata=None, photometric="RGB")
+                    with rasterio.open(color_path, "w", **color_meta) as rgb_dst, \
+                         rasterio.open(palette_path, "w", **src.profile) as palette_dst:
+                        palette_dst.write_colormap(1, {index: tuple(int(v) for v in rgb) for index, rgb in enumerate(palette)})
+                        total = ((src.width + 255) // 256) * ((src.height + 255) // 256)
+                        previous = -1
+                        for number, (_, window) in enumerate(src.block_windows(1), 1):
+                            check_cancel()
+                            ids = src.read(1, window=window)
+                            rgb_dst.write(np.moveaxis(palette[ids], -1, 0), window=window)
+                            palette_dst.write(ids, 1, window=window)
+                            percent = 65 + int(number / total * 30)
+                            if percent != previous:
+                                self.progress_updated.emit(percent, "正在分块生成 RGB 与调色板标签…")
+                                previous = percent
+                check_cancel()
+            self.progress_updated.emit(100, "三份标签文件已保存。")
+            self.finished_signal.emit(
+                f"栅格化完成，共处理 {result.burned_features} 个要素。\n输出目录：{self.output_dir}", "info")
+        except RasterizeCancelled:
+            self.finished_signal.emit("操作已取消，未完成的输出已清理。", "warning")
+        except Exception as exc:
+            self.finished_signal.emit(f"处理失败：{exc}", "error")
 
 
 class TifProcessorWindow(QWidget):
@@ -470,7 +373,6 @@ class TifProcessorWindow(QWidget):
         self.progress_bar.setValue(0)
         self.log_edit.clear()
         self.log_edit.append("开始处理...")
-        QApplication.processEvents()
 
         self.processor_thread = TifProcessThread(
             self.gpkg_path, self.tif_path, self.output_dir,
@@ -478,7 +380,7 @@ class TifProcessorWindow(QWidget):
         )
         self.processor_thread.setProperty("current_progress_value", 0)  # Store progress
         self.processor_thread.progress_updated.connect(self.update_progress)
-        self.processor_thread.finished_signal.connect(self.on_processing_finished)
+        bind_task(self, "processor_thread", self.on_processing_finished)
         self.processor_thread.start()
 
     def update_progress(self, value: int, message: str):
@@ -487,7 +389,6 @@ class TifProcessorWindow(QWidget):
         self.log_edit.ensureCursorVisible()
         if self.processor_thread:
             self.processor_thread.setProperty("current_progress_value", value)
-        QApplication.processEvents()
 
     def on_processing_finished(self, message: str, msg_type: str):
         self.log_edit.append(f"--------------------\n{msg_type.upper()}: {message}")
@@ -502,20 +403,8 @@ class TifProcessorWindow(QWidget):
         # For "warning" or other types, progress might not be 100.
 
     def closeEvent(self, event):
-        if self.processor_thread and self.processor_thread.isRunning():
-            reply = QMessageBox.question(self, '退出确认',
-                                         "处理正在进行中，确定要退出吗？",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.Yes:
-                self.log_edit.append("用户请求取消操作...")
-                self.processor_thread.requestInterruption()
-                if not self.processor_thread.wait(3000):
-                    self.log_edit.append("线程未能及时停止。")
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
+        # TaskBinding defers close while the worker is still running.
+        event.accept()
 
 
 if __name__ == '__main__':

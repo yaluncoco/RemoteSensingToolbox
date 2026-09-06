@@ -1,3 +1,5 @@
+from Toolbox.task_support import bind_task
+from Toolbox.file_io import atomic_output
 import os
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -409,25 +411,31 @@ def cut_image_tiles(
                             window=window,
                             boundless=True,
                             fill_value=0,
+                            masked=True,
                         )
                     else:
-                        label_data = label_src.read(1, window=window)
+                        label_data = label_src.read(1, window=window, masked=True)
+                    label_data = np.ma.filled(label_data, 0)
                     bg_ratio = np.count_nonzero(label_data == 0) / label_data.size
                     if bg_ratio >= bg_thresh:
                         stats.skipped_background_tiles += 1
                         mark_processed()
                         continue
+                    if (not np.isfinite(label_data).all() or label_data.min() < 0 or
+                            label_data.max() > 65535 or not np.equal(label_data, np.floor(label_data)).all()):
+                        raise ValueError("PNG 标签切片需要 0 到 65535 的整数类别值。")
+                    label_data = label_data.astype(np.uint8 if label_data.max() <= 255 else np.uint16)
 
                 name_prefix = f"{output_prefix}_" if output_prefix else ""
                 img_filename = f"{name_prefix}tile_{i}_{j}.jpg"
-                Image.fromarray(image_rgb).save(os.path.join(img_output_dir, img_filename), quality=95)
+                with atomic_output(os.path.join(img_output_dir, img_filename)) as temporary:
+                    Image.fromarray(image_rgb).save(temporary, quality=95)
                 stats.saved_image_tiles += 1
 
                 if label_data is not None and label_output_dir:
                     label_filename = f"{name_prefix}tile_{i}_{j}.png"
-                    Image.fromarray(label_data.astype(np.uint8)).save(
-                        os.path.join(label_output_dir, label_filename)
-                    )
+                    with atomic_output(os.path.join(label_output_dir, label_filename)) as temporary:
+                        Image.fromarray(label_data).save(temporary)
                     stats.saved_label_tiles += 1
 
                 mark_processed()
@@ -813,7 +821,7 @@ class ImageCutterWindow(QWidget):
             edge_mode,
         )
         self.cutter_thread.progress_updated.connect(self.progress_bar.setValue)
-        self.cutter_thread.finished_signal.connect(self.on_cutting_finished)
+        bind_task(self, "cutter_thread", self.on_cutting_finished)
         self.cutter_thread.start()
 
     def on_cutting_finished(self, message: str, msg_type: str):
@@ -825,19 +833,5 @@ class ImageCutterWindow(QWidget):
             QMessageBox.critical(self, "操作失败", message)
 
     def closeEvent(self, event):
-        if self.cutter_thread and self.cutter_thread.isRunning():
-            reply = QMessageBox.question(
-                self,
-                "退出确认",
-                "切片正在进行中，确定要退出吗？",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply == QMessageBox.Yes:
-                self.cutter_thread.requestInterruption()
-                self.cutter_thread.wait()
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
+        # TaskBinding defers close while the worker is still running.
+        event.accept()

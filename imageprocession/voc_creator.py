@@ -1,5 +1,8 @@
+from Toolbox.task_support import bind_task
 import os
 import shutil
+import math
+import numpy as np
 from PyQt5.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout, QFileDialog, QLabel, QLineEdit,
     QHBoxLayout, QMessageBox, QGroupBox, QFormLayout, QProgressBar, QTextEdit,
@@ -30,6 +33,11 @@ class VOCCreatorThread(QThread):
 
     def run(self):
         try:
+            if (not self.dataset_name.strip() or self.dataset_name in (".", "..")
+                    or any(part in self.dataset_name for part in ("/", "\\", ":"))):
+                raise ValueError("数据集名称必须是单个文件夹名称。")
+            if not math.isfinite(self.train_ratio) or not 0 <= self.train_ratio <= 1:
+                raise ValueError("训练集比例必须在 0 到 1 之间。")
             self.progress_updated.emit(0, f"Initializing VOC dataset creation for '{self.dataset_name}'...")
             try:
                 from sklearn.model_selection import train_test_split
@@ -64,7 +72,7 @@ class VOCCreatorThread(QThread):
 
             # Get all potential image files first
             try:
-                source_images_all = os.listdir(self.source_image_dir)
+                source_images_all = sorted(os.listdir(self.source_image_dir), key=str.casefold)
             except FileNotFoundError:
                 self.finished_signal.emit(f"Source image directory not found: {self.source_image_dir}", "error")
                 return
@@ -75,6 +83,10 @@ class VOCCreatorThread(QThread):
                    f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'))
             ]
 
+            stems = [os.path.splitext(name)[0].casefold() for name in source_images_files]
+            if len(set(stems)) != len(stems):
+                raise ValueError("输入图像存在同名的不同格式文件，转换为 VOC 会覆盖，请先重命名。")
+            label_names = {name.casefold(): name for name in os.listdir(self.source_label_dir)}
             total_files_to_process = len(source_images_files)
             if total_files_to_process == 0:
                 self.progress_updated.emit(15, "No image files found in the source image directory.")
@@ -96,7 +108,7 @@ class VOCCreatorThread(QThread):
                 label_file_found = None
 
                 for lbl_ext in possible_label_extensions:
-                    potential_label_file = base_name + lbl_ext
+                    potential_label_file = label_names.get((base_name + lbl_ext).casefold(), base_name + lbl_ext)
                     path_to_label = os.path.join(self.source_label_dir, potential_label_file)
                     if os.path.exists(path_to_label) and os.path.isfile(path_to_label):
                         label_file_found = potential_label_file
@@ -143,6 +155,11 @@ class VOCCreatorThread(QThread):
                             )
                             pil_lbl_l = pil_lbl.convert("L")
                             pil_lbl_l.save(dst_lbl_path, "PNG")
+                        elif pil_lbl.mode in ("I", "I;16", "I;16L", "I;16B"):
+                            label_values = np.asarray(pil_lbl)
+                            if label_values.min() < 0 or label_values.max() > 65535:
+                                raise ValueError("PNG 标签支持的整数类别范围为 0 到 65535。")
+                            PILImage.fromarray(label_values.astype(np.uint16)).save(dst_lbl_path, "PNG")
                         elif pil_lbl.mode not in ("L", "P", "1"):
                             self.progress_updated.emit(
                                 current_progress_val,  # Use existing progress value
@@ -212,17 +229,17 @@ class VOCCreatorThread(QThread):
                         train_names = list(image_filenames_copied)
                         val_names = []
 
-            with open(os.path.join(image_sets_seg_path, "train.txt"), 'w') as f:
+            with open(os.path.join(image_sets_seg_path, "train.txt"), 'w', encoding='utf-8') as f:
                 f.write('\n'.join(train_names))
             self.progress_updated.emit(85, f"train.txt created with {len(train_names)} entries.")
 
-            with open(os.path.join(image_sets_seg_path, "val.txt"), 'w') as f:
+            with open(os.path.join(image_sets_seg_path, "val.txt"), 'w', encoding='utf-8') as f:
                 f.write('\n'.join(val_names))
             self.progress_updated.emit(90, f"val.txt created with {len(val_names)} entries.")
 
             # Create trainval.txt
             trainval_names = sorted(list(set(train_names + val_names)))
-            with open(os.path.join(image_sets_seg_path, "trainval.txt"), 'w') as f:
+            with open(os.path.join(image_sets_seg_path, "trainval.txt"), 'w', encoding='utf-8') as f:
                 f.write('\n'.join(trainval_names))
             self.progress_updated.emit(95, f"trainval.txt created with {len(trainval_names)} entries.")
 
@@ -404,14 +421,13 @@ class VOCDatasetCreatorWindow(QWidget):
         # Pass progress_bar to the thread instance for error case updates
         self.creator_thread.progress_bar = self.progress_bar
         self.creator_thread.progress_updated.connect(self.update_progress)
-        self.creator_thread.finished_signal.connect(self.on_creation_finished)
+        bind_task(self, "creator_thread", self.on_creation_finished)
         self.creator_thread.start()
 
     def update_progress(self, value: int, message: str):
         self.progress_bar.setValue(value)
         self.log_edit.append(message)
         # self.log_edit.ensureCursorVisible() # Scroll to bottom
-        QApplication.processEvents()
 
     def on_creation_finished(self, message: str, msg_type: str):
         self.log_edit.append(f"--------------------\n{msg_type.upper()}: {message}")
@@ -430,17 +446,5 @@ class VOCDatasetCreatorWindow(QWidget):
         # For errors, progress bar remains at its last reported state or the error update.
 
     def closeEvent(self, event):
-        if self.creator_thread and self.creator_thread.isRunning():
-            reply = QMessageBox.question(self, '退出确认',
-                                         "VOC数据集创建正在进行中，确定要退出吗？\n未完成的操作将丢失。",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply == QMessageBox.Yes:
-                self.log_edit.append("用户请求取消操作...")
-                self.creator_thread.requestInterruption()
-                if not self.creator_thread.wait(3000):  # Wait up to 3 seconds
-                    self.log_edit.append("线程未能及时停止，可能强制关闭。")
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
+        # TaskBinding defers close while the worker is still running.
+        event.accept()
