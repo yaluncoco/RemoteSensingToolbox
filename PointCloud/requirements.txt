@@ -1,0 +1,7 @@
+numpy
+open3d
+PyQt5
+scikit-learn
+matplotlib
+tqdm
+pyinstaller

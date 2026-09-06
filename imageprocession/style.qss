@@ -1,0 +1,79 @@
+QWidget {
+    font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
+    font-size: 10pt;
+}
+
+QMainWindow, QWidget {
+    background-color: #f0f0f0; /* Light gray background */
+}
+
+QPushButton {
+    background-color: #0078d4; /* Blue */
+    color: white;
+    border-radius: 5px;
+    padding: 8px 15px;
+    font-weight: bold;
+    min-width: 80px;
+}
+
+QPushButton:hover {
+    background-color: #005a9e; /* Darker blue */
+}
+
+QPushButton:pressed {
+    background-color: #004c8a; /* Even darker blue */
+}
+
+QPushButton:disabled {
+    background-color: #cccccc;
+    color: #666666;
+}
+
+QLineEdit, QTextEdit {
+    border: 1px solid #cccccc;
+    border-radius: 3px;
+    padding: 5px;
+    background-color: white;
+}
+
+QLineEdit:focus, QTextEdit:focus {
+    border-color: #0078d4;
+}
+
+QLabel {
+    color: #333333;
+}
+
+QGroupBox {
+    border: 1px solid #cccccc;
+    border-radius: 5px;
+    margin-top: 10px;
+    font-weight: bold;
+    background-color: #e8e8e8; /* Slightly different background for groupbox */
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px 0 5px;
+    left: 10px; /* Position title slightly indented */
+    background-color: #f0f0f0; /* Match main background for title area */
+    border-radius: 3px;
+}
+
+QProgressBar {
+    border: 1px solid #cccccc;
+    border-radius: 3px;
+    text-align: center;
+    background-color: white;
+}
+
+QProgressBar::chunk {
+    background-color: #0078d4; /* Blue progress */
+    width: 10px;
+    margin: 0.5px;
+}
+
+QMessageBox {
+    font-size: 10pt;
+}

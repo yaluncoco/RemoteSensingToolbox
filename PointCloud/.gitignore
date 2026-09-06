@@ -1,0 +1,30 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local IDE metadata
+.idea/
+.vscode/
+
+# PyInstaller outputs
+build/
+dist/
+*.spec.bak
+
+# Runtime logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Local data/output artifacts
+output/
+outputs/
+results/
+*.npy
+*.npz

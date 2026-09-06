@@ -1,0 +1,10 @@
+PyQt5
+numpy
+Pillow
+rasterio
+fiona
+scikit-learn
+matplotlib
+open3d
+tqdm
+pyinstaller
