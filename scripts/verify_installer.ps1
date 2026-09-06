@@ -14,8 +14,9 @@ if (-not $Installer) {
 }
 if (-not $Installer -or -not (Test-Path $Installer)) { throw "Installer not found." }
 New-Item -ItemType Directory -Force $VerificationDir | Out-Null
-$GroupName = "RemoteSensingToolbox Validation"
+$GroupName = "遥感与点云综合工具箱"
 $MenuDir = Join-Path ([Environment]::GetFolderPath("Programs")) $GroupName
+if (Test-Path $MenuDir) { throw "The start menu group already exists; inspect it before testing." }
 $AppExe = Join-Path $InstallDir "RemoteSensingToolbox.exe"
 $Report = Join-Path $VerificationDir "installed-self-test.json"
 $Installed = $false

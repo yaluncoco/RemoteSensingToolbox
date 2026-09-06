@@ -68,6 +68,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 & "$env:LOCALAPPDATA\Programs\RemoteSensingToolbox\RemoteSensingToolbox.exe" --self-test --report "$env:TEMP\toolbox-self-test.json"
 ```
 
+本次验证和性能对比见 [验证记录](docs/VALIDATION.md)。
+
 自检包含 8 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 
 日志位于 `%LOCALAPPDATA%\RemoteSensingToolbox\logs\`。测试、打包中间文件、用户数据和旧发行文件不进入 Git 仓库；GitHub Releases 保存安装包和便携版。
