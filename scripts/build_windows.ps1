@@ -24,21 +24,27 @@ try {
     $AppExe = Join-Path $AppDir "RemoteSensingToolbox.exe"
     $Report = Join-Path $RepoRoot ".build\frozen-self-test.json"
     if (Test-Path $Report) { Remove-Item $Report }
-    $OldQtPlatform = $env:QT_QPA_PLATFORM
-    try {
-        $env:QT_QPA_PLATFORM = "offscreen"
-        $Process = Start-Process -FilePath $AppExe -ArgumentList @("--self-test", "--report", "`"$Report`"") -PassThru
-        $Process.Handle | Out-Null
-        if (-not $Process.WaitForExit(180000)) {
-            Stop-Process -Id $Process.Id -Force
-            throw "The frozen application self-test timed out."
-        }
-        $Process.Refresh()
-        if ($Process.ExitCode -ne 0 -or -not (Test-Path $Report)) { throw "The frozen application self-test failed." }
-        $Result = Get-Content $Report -Raw -Encoding UTF8 | ConvertFrom-Json
-        if (-not $Result.ok -or -not $Result.frozen) { throw "Frozen self-test did not pass." }
+    $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $ProcessInfo.FileName = $AppExe
+    $ProcessInfo.Arguments = "--self-test --report `"$Report`""
+    $ProcessInfo.WorkingDirectory = Join-Path $RepoRoot ".build"
+    $ProcessInfo.UseShellExecute = $false
+    $ProcessInfo.EnvironmentVariables["PATH"] = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
+    foreach ($Name in @("PYTHONPATH", "PYTHONHOME", "CONDA_PREFIX", "CONDA_DEFAULT_ENV", "GDAL_DATA", "PROJ_LIB", "PROJ_DATA", "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH")) {
+        $ProcessInfo.EnvironmentVariables.Remove($Name)
     }
-    finally { $env:QT_QPA_PLATFORM = $OldQtPlatform }
+    $ProcessInfo.EnvironmentVariables["QT_QPA_PLATFORM"] = "offscreen"
+    $Process = New-Object System.Diagnostics.Process
+    $Process.StartInfo = $ProcessInfo
+    if (-not $Process.Start()) { throw "Could not start the frozen application self-test." }
+    if (-not $Process.WaitForExit(180000)) {
+        $Process.Kill()
+        throw "The frozen application self-test timed out."
+    }
+    $Process.Refresh()
+    if ($Process.ExitCode -ne 0 -or -not (Test-Path $Report)) { throw "The frozen application self-test failed." }
+    $Result = Get-Content $Report -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not $Result.ok -or -not $Result.frozen) { throw "Frozen self-test did not pass." }
 
     Copy-Item Toolbox/quick_start.md (Join-Path $AppDir "使用说明.md")
     Copy-Item THIRD_PARTY_NOTICES.md $AppDir

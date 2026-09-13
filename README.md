@@ -8,11 +8,13 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在 [GitHub Releases](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 下载：
 
-- `RemoteSensingToolbox-1.0.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.0.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.1.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.1.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 安装包包含 Python、Qt、GIS 和点云运行库，无需另装 Python/Conda。安装后可从开始菜单打开，在系统“已安装的应用”中卸载。发行包尚未配置代码签名。
+
+主界面左下角提供检查更新图标，默认在启动后和每 6 小时后台检查。有新版时显示红点，点击可查看更新说明并打开下载页面；检查失败可手动重试，不影响本地工具使用。
 
 ## 工具
 
@@ -30,6 +32,11 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 使用细节见 [快速开始](Toolbox/quick_start.md) 和 [完整使用手册](遥感点云工具箱_使用与维护手册.md)。
 
 ## 本版改进
+
+- 左下角改为检查更新小图标，启动后默认在后台检查正式版本，有新版时显示红点。
+- 点击更新图标可查看版本说明并前往下载；支持失败重试，重启或临时断网时保留已发现的新版本提醒。
+
+此前版本的处理与稳定性改进：
 
 - TIF RGB 转换与 GPKG 栅格化改为分块读写；大图百分位拉伸使用全图采样，最小/最大值拉伸使用精确统计。
 - 保留地理参考，排除无效像素；RGB TIFF 使用掩膜，避免把有效黑色像素误当作无效区域。
@@ -68,10 +75,14 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 & "$env:LOCALAPPDATA\Programs\RemoteSensingToolbox\RemoteSensingToolbox.exe" --self-test --report "$env:TEMP\toolbox-self-test.json"
 ```
 
-本次验证和性能对比见 [验证记录](docs/VALIDATION.md)。
+本版安装与功能验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 
 自检包含 8 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 
 日志位于 `%LOCALAPPDATA%\RemoteSensingToolbox\logs\`。测试、打包中间文件、用户数据和旧发行文件不进入 Git 仓库；GitHub Releases 保存安装包和便携版。
 
 新增工具请参考 [工具注册说明](Toolbox/README.md)。第三方许可证及源码链接见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+更新检查使用 `Toolbox/version.py` 中 `UPDATE_REPOSITORY` 指定的 GitHub Releases，版本标签采用 `v1.2.3` 这样的数字版本。客户端只接受正式发布版本，不提示草稿或预发布版本；发行时需同步修改 `APP_VERSION`。更新窗口打开发布页面供用户下载安装，不会自动覆盖正在运行的程序。
+
+更新源必须允许匿名访问。目前配置的 `yaluncoco/RemoteSensingToolbox` 是私有仓库，匿名检查会返回 404，并在手动检查时显示无法读取更新信息。若源码继续保持私有，可另用公开发行仓库保存版本说明和安装包，再调整 `UPDATE_REPOSITORY`；无需将访问令牌放入客户端。

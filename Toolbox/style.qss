@@ -24,14 +24,53 @@ QLabel#sidebarSubtitle {
     font-size: 9.5pt;
 }
 
-QLabel#sidebarHint,
-QLabel#sidebarStatus {
-    color: #D6DEE8;
+QToolButton#updateButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0;
+}
+
+QToolButton#updateButton:hover,
+QToolButton#updateButton:focus {
     background: #223044;
-    border: 1px solid #304058;
+    border-color: #3A4B63;
+}
+
+QToolButton#updateButton:pressed {
+    background: #304058;
+}
+
+QDialog#updateDialog {
+    background: #F5F7FA;
+}
+
+QLabel#updateHeading {
+    color: #111827;
+    font-size: 16pt;
+    font-weight: 700;
+}
+
+QTextBrowser#releaseNotes {
+    background: #FFFFFF;
+    border: 1px solid #D8E0EA;
     border-radius: 8px;
     padding: 10px;
-    line-height: 140%;
+}
+
+QPushButton#secondaryButton {
+    color: #42526A;
+    background: #FFFFFF;
+    border-color: #CBD5E1;
+}
+
+QPushButton#secondaryButton:hover {
+    background: #EDF2F7;
+}
+
+QPushButton#secondaryButton:disabled {
+    color: #94A3B8;
+    background: #EEF2F7;
 }
 
 QPushButton#categoryButton {

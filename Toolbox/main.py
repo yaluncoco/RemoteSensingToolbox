@@ -44,6 +44,8 @@ except ImportError:
     from tool_registry import TOOLS, ToolSpec, load_tool_class
 
 from Toolbox.task_support import bind_task
+from Toolbox.updater import UpdateChecker
+from Toolbox.update_ui import UpdateButton, UpdateDialog
 from Toolbox.version import APP_ID, APP_TITLE, APP_VERSION
 
 
@@ -156,12 +158,14 @@ class ToolCard(QFrame):
 
 
 class ToolboxWindow(QMainWindow):
-    def __init__(self, persist_settings=True):
+    def __init__(self, persist_settings=True, check_updates=True):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
         self.setMinimumSize(760, 560)
         self.resize(1120, 760)
         self.settings = QSettings(APP_ID, APP_ID) if persist_settings else None
+        self.update_checker = UpdateChecker(self, settings=self.settings)
+        self.update_dialog = None
         self._loader = None
         self._closing_children = False
         self.render_timer = QTimer(self)
@@ -199,6 +203,8 @@ class ToolboxWindow(QMainWindow):
                 self.category_buttons[category].setChecked(True)
         self._center_on_screen()
         self.render_tools()
+        if check_updates:
+            self.update_checker.start_automatic_checks()
 
     def _init_ui(self) -> None:
         shell = QWidget()
@@ -251,22 +257,15 @@ class ToolboxWindow(QMainWindow):
 
         self.category_buttons["全部"].setChecked(True)
 
-        layout.addStretch(1)
-
         help_button = QPushButton("使用说明")
         help_button.setObjectName("categoryButton")
         help_button.clicked.connect(self.open_manual)
         layout.addWidget(help_button)
 
-        hint = QLabel(f"双击卡片打开工具\nCtrl+K 快速搜索\n版本 {APP_VERSION}")
-        hint.setObjectName("sidebarHint")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
-
-        self.sidebar_status = QLabel("状态：就绪")
-        self.sidebar_status.setObjectName("sidebarStatus")
-        self.sidebar_status.setWordWrap(True)
-        layout.addWidget(self.sidebar_status)
+        layout.addStretch(1)
+        self.update_button = UpdateButton(self.update_checker, sidebar)
+        self.update_button.clicked.connect(self.open_updates)
+        layout.addWidget(self.update_button, 0, Qt.AlignLeft)
         return sidebar
 
     def _create_content(self) -> QWidget:
@@ -454,7 +453,19 @@ class ToolboxWindow(QMainWindow):
         if self.settings:
             self.settings.setValue("geometry", self.saveGeometry())
             self.settings.setValue("category", self.active_category)
+        self.update_checker.stop()
+        if self.update_dialog is not None:
+            self.update_dialog.close()
         event.accept()
+
+    def open_updates(self):
+        if self.update_dialog is None:
+            self.update_dialog = UpdateDialog(self.update_checker, self)
+        self.update_dialog.show()
+        self.update_dialog.raise_()
+        self.update_dialog.activateWindow()
+        if not self.update_checker.has_update:
+            self.update_checker.check()
 
     def open_manual(self):
         dialog = QDialog(self)
@@ -469,7 +480,6 @@ class ToolboxWindow(QMainWindow):
 
     def set_status(self, message: str) -> None:
         self.statusBar().showMessage(message, 5000)
-        self.sidebar_status.setText(f"状态：{message}")
 
 
 def apply_application_style(app: QApplication) -> None:

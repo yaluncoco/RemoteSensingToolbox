@@ -50,10 +50,17 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
     errors = []
     original_critical = QMessageBox.critical
     QMessageBox.critical = lambda _parent, title, message, *args, **kwargs: errors.append(f"{title}: {message}") or QMessageBox.Ok
-    dashboard = ToolboxWindow(persist_settings=False)
+    dashboard = ToolboxWindow(persist_settings=False, check_updates=False)
     dashboard.show()
     try:
         check("dashboard", lambda: save_window(dashboard, "dashboard"))
+
+        def update_network_runtime():
+            import ssl
+            ssl.create_default_context()
+            return ssl.OPENSSL_VERSION
+        check("update-network-runtime", update_network_runtime)
+
         dashboard.resize(760, 600)
         dashboard.render_tools()
         check("dashboard-small-screen", lambda: save_window(dashboard, "dashboard-small"))
