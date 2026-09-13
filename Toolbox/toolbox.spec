@@ -11,7 +11,6 @@ from Toolbox.tool_registry import TOOLS
 
 datas = [
     (str(root / "Toolbox" / "style.qss"), "."),
-    (str(root / "Toolbox" / "quick_start.md"), "."),
     (str(root / "PointCloud" / "images" / "point.ico"), "."),
     (str(root / ".build" / "licenses"), "licenses"),
 ]

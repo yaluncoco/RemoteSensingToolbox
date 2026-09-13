@@ -8,8 +8,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在 [GitHub Releases](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 下载：
 
-- `RemoteSensingToolbox-1.1.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.1.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.1.1-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.1.1-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 安装包包含 Python、Qt、GIS 和点云运行库，无需另装 Python/Conda。安装后可从开始菜单打开，在系统“已安装的应用”中卸载。发行包尚未配置代码签名。
@@ -29,15 +29,28 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 | VOC 数据集制作 | 图像/标签整理、可复现的训练验证划分、16 位整数标签 |
 | 点云处理工作台 | 预览、去噪、格式转换、ScanNet、NPY 查看、标签合并、四种下采样 |
 
-使用细节见 [快速开始](Toolbox/quick_start.md) 和 [完整使用手册](遥感点云工具箱_使用与维护手册.md)。
+## 使用方法
+
+1. 在左侧选择分类，或在右上角输入工具名称、格式、关键词；按 **Ctrl+K** 可直接定位搜索框，也可以用空格组合关键词，例如 `RGB TIF`。
+2. 点击卡片上的 **打开**，或双击卡片，进入对应工具。再次打开同一工具会切换到已有窗口。
+3. 选择输入文件和输出位置，设置处理参数后运行。工具窗口可独立使用，关闭时会安全处理尚未结束的任务。
+4. 左下角的循环箭头用于检查更新。有新版时显示红点，点击后可查看版本说明并前往下载。
+
+主窗口默认 960×600，会根据屏幕可用空间调整；工具卡片随窗口宽度切换为一至三列。调整后的窗口大小和所选分类会在下次启动时恢复。
+
+操作说明统一放在本仓库：[快速开始](Toolbox/quick_start.md) 介绍各工具的操作流程和输出特点，[完整使用手册](遥感点云工具箱_使用与维护手册.md) 提供详细参数。
 
 ## 本版改进
 
-- 左下角改为检查更新小图标，启动后默认在后台检查正式版本，有新版时显示红点。
-- 点击更新图标可查看版本说明并前往下载；支持失败重试，重启或临时断网时保留已发现的新版本提醒。
+- 收紧主窗口、侧栏、标题和控件间距，标题与搜索同排，默认窗口可完整展示 8 个工具。
+- 工具卡片保留名称、简短用途、分类和打开按钮，移除重复标签；小窗口自动减少列数并支持纵向滚动。
+- 跟随 Windows 实际显示缩放比例，避免 150% 被取整为 200%；文字换行时卡片高度自动调整。
+- 移除应用内使用说明窗口、安装包中的说明副本和开始菜单说明快捷方式，操作指南统一在 GitHub 维护。
+- 升级后首次启动采用新的紧凑窗口尺寸，后续继续记住用户调整后的大小。
 
 此前版本的处理与稳定性改进：
 
+- 左下角提供检查更新图标，启动后默认后台检查正式版本；有新版时显示红点，支持重试和前往发布页下载。
 - TIF RGB 转换与 GPKG 栅格化改为分块读写；大图百分位拉伸使用全图采样，最小/最大值拉伸使用精确统计。
 - 保留地理参考，排除无效像素；RGB TIFF 使用掩膜，避免把有效黑色像素误当作无效区域。
 - SHP、切片、VOC 流程保留 16 位类别值，避免类别 ID 大于 255 时被截断。
@@ -75,7 +88,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 & "$env:LOCALAPPDATA\Programs\RemoteSensingToolbox\RemoteSensingToolbox.exe" --self-test --report "$env:TEMP\toolbox-self-test.json"
 ```
 
-本版安装与功能验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
+本版安装与界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，此前的更新功能验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 
 自检包含 8 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 

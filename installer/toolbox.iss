@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.1.0"
+  #define AppVersion "1.1.1"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\dist\RemoteSensingToolbox"
@@ -46,9 +46,13 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; Flags: unchecked
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+Type: files; Name: "{app}\使用说明.md"
+Type: files; Name: "{app}\_internal\quick_start.md"
+Type: files; Name: "{group}\使用说明.lnk"
+
 [Icons]
 Name: "{group}\遥感与点云综合工具箱"; Filename: "{app}\RemoteSensingToolbox.exe"; WorkingDir: "{app}"
-Name: "{group}\使用说明"; Filename: "{app}\使用说明.md"
 Name: "{group}\卸载"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\遥感与点云综合工具箱"; Filename: "{app}\RemoteSensingToolbox.exe"; Tasks: desktopicon
 

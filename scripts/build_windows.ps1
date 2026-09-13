@@ -46,7 +46,6 @@ try {
     $Result = Get-Content $Report -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $Result.ok -or -not $Result.frozen) { throw "Frozen self-test did not pass." }
 
-    Copy-Item Toolbox/quick_start.md (Join-Path $AppDir "使用说明.md")
     Copy-Item THIRD_PARTY_NOTICES.md $AppDir
     $ReleaseDir = Join-Path $RepoRoot "release"
     New-Item -ItemType Directory -Force $ReleaseDir | Out-Null

@@ -17,7 +17,6 @@ from PyQt5.QtGui import QFont, QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QApplication,
     QButtonGroup,
-    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -30,11 +29,9 @@ from PyQt5.QtWidgets import (
     QShortcut,
     QScrollArea,
     QSizePolicy,
-    QSpacerItem,
     QStyle,
     QStyleFactory,
     QVBoxLayout,
-    QTextBrowser,
     QWidget,
 )
 
@@ -50,6 +47,8 @@ from Toolbox.version import APP_ID, APP_TITLE, APP_VERSION
 
 
 CATEGORIES = ("全部", "图像处理", "点云处理", "数据集")
+WINDOW_LAYOUT_VERSION = 2
+CARD_MIN_WIDTH = 244
 _STANDARD_ICON_CACHE: dict[str, QIcon] = {}
 
 
@@ -96,57 +95,47 @@ class ToolCard(QFrame):
         super().__init__(parent)
         self.spec = spec
         self.setObjectName("toolCard")
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setMinimumHeight(178)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setMinimumHeight(144)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip(spec.summary)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         header = QHBoxLayout()
+        header.setSpacing(8)
         icon_label = QLabel()
         icon_label.setObjectName("toolIcon")
+        icon_label.setFixedSize(32, 32)
+        icon_label.setAlignment(Qt.AlignCenter)
         icon = get_standard_icon(self.style(), spec.icon_name)
-        icon_label.setPixmap(icon.pixmap(26, 26))
-        header.addWidget(icon_label, 0, Qt.AlignTop)
+        icon_label.setPixmap(icon.pixmap(20, 20))
+        header.addWidget(icon_label)
 
-        title_block = QVBoxLayout()
-        title_block.setSpacing(2)
         title = QLabel(spec.title)
         title.setObjectName("toolTitle")
         title.setWordWrap(True)
-        title_block.addWidget(title)
-
-        category = QLabel(spec.category)
-        category.setObjectName("toolCategory")
-        title_block.addWidget(category)
-        header.addLayout(title_block, 1)
+        header.addWidget(title, 1)
         layout.addLayout(header)
 
         summary = QLabel(spec.summary)
         summary.setObjectName("toolSummary")
         summary.setWordWrap(True)
-        summary.setMinimumHeight(44)
-        layout.addWidget(summary)
-
-        tag_row = QHBoxLayout()
-        tag_row.setSpacing(6)
-        for tag in spec.tags[:4]:
-            pill = QLabel(tag)
-            pill.setObjectName("tagPill")
-            tag_row.addWidget(pill, 0)
-        tag_row.addStretch(1)
-        layout.addLayout(tag_row)
-
-        layout.addStretch(1)
+        summary.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        summary.setMinimumHeight(36)
+        layout.addWidget(summary, 1)
 
         action_row = QHBoxLayout()
+        category = QLabel(spec.category)
+        category.setObjectName("toolCategory")
+        action_row.addWidget(category)
         action_row.addStretch(1)
         open_button = QPushButton("打开")
-        open_button.setObjectName("primaryButton")
-        open_button.setIcon(get_standard_icon(self.style(), "SP_ArrowForward"))
+        open_button.setObjectName("openToolButton")
+        open_button.setAccessibleName(f"打开{spec.title}")
+        open_button.setCursor(Qt.PointingHandCursor)
         open_button.clicked.connect(lambda: self.open_requested.emit(self.spec))
         action_row.addWidget(open_button, 0)
         layout.addLayout(action_row)
@@ -161,9 +150,10 @@ class ToolboxWindow(QMainWindow):
     def __init__(self, persist_settings=True, check_updates=True):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.setMinimumSize(760, 560)
-        self.resize(1120, 760)
+        self.setMinimumSize(640, 420)
+        self.resize(960, 600)
         self.settings = QSettings(APP_ID, APP_ID) if persist_settings else None
+        self._restored_geometry = False
         self.update_checker = UpdateChecker(self, settings=self.settings)
         self.update_dialog = None
         self._loader = None
@@ -195,8 +185,8 @@ class ToolboxWindow(QMainWindow):
         self.search_shortcut.activated.connect(self.search_edit.setFocus)
         if self.settings:
             geometry = self.settings.value("geometry")
-            if geometry:
-                self.restoreGeometry(geometry)
+            if geometry and self.settings.value("layout_version", 0, type=int) == WINDOW_LAYOUT_VERSION:
+                self._restored_geometry = self.restoreGeometry(geometry)
             category = self.settings.value("category", "全部")
             if category in CATEGORIES:
                 self.active_category = category
@@ -226,21 +216,21 @@ class ToolboxWindow(QMainWindow):
     def _create_sidebar(self) -> QWidget:
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(210)
+        sidebar.setFixedWidth(160)
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(18, 22, 18, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 18, 14, 12)
+        layout.setSpacing(6)
 
         title = QLabel("综合工具箱")
         title.setObjectName("sidebarTitle")
         layout.addWidget(title)
 
-        subtitle = QLabel("图像处理 · 数据集 · 点云")
+        subtitle = QLabel("影像 · 点云 · 数据集")
         subtitle.setObjectName("sidebarSubtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
-        layout.addSpacing(14)
+        layout.addSpacing(12)
 
         group = QButtonGroup(self)
         group.setExclusive(True)
@@ -248,7 +238,7 @@ class ToolboxWindow(QMainWindow):
             button = QPushButton(category)
             button.setObjectName("categoryButton")
             button.setCheckable(True)
-            button.setMinimumHeight(42)
+            button.setMinimumHeight(34)
             button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda checked=False, name=category: self.set_category(name))
             layout.addWidget(button)
@@ -256,11 +246,6 @@ class ToolboxWindow(QMainWindow):
             self.category_buttons[category] = button
 
         self.category_buttons["全部"].setChecked(True)
-
-        help_button = QPushButton("使用说明")
-        help_button.setObjectName("categoryButton")
-        help_button.clicked.connect(self.open_manual)
-        layout.addWidget(help_button)
 
         layout.addStretch(1)
         self.update_button = UpdateButton(self.update_checker, sidebar)
@@ -272,33 +257,32 @@ class ToolboxWindow(QMainWindow):
         content = QWidget()
         content.setObjectName("content")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(28, 24, 28, 22)
-        layout.setSpacing(16)
+        layout.setContentsMargins(16, 16, 16, 14)
+        layout.setSpacing(12)
 
-        top_row = QVBoxLayout()
+        top_row = QHBoxLayout()
+        top_row.setSpacing(16)
         title_block = QVBoxLayout()
-        title_block.setSpacing(4)
-        title = QLabel(APP_TITLE)
-        title.setObjectName("pageTitle")
-        title_block.addWidget(title)
-        subtitle = QLabel("从影像切片到点云处理，快速找到需要的工具。")
-        subtitle.setWordWrap(True)
-        subtitle.setObjectName("pageSubtitle")
-        title_block.addWidget(subtitle)
+        title_block.setSpacing(2)
+        self.page_title = QLabel("全部工具")
+        self.page_title.setObjectName("pageTitle")
+        title_block.addWidget(self.page_title)
+        self.summary_label = QLabel()
+        self.summary_label.setObjectName("summaryLabel")
+        title_block.addWidget(self.summary_label)
         top_row.addLayout(title_block, 1)
 
         self.search_edit = QLineEdit()
         self.search_edit.setObjectName("searchEdit")
         self.search_edit.setPlaceholderText("搜索工具、格式或关键词")
+        self.search_edit.setToolTip("搜索工具、格式或关键词（Ctrl+K）")
+        self.search_edit.setAccessibleName("搜索工具")
         self.search_edit.setClearButtonEnabled(True)
-        self.search_edit.setMinimumWidth(220)
+        self.search_edit.setMinimumWidth(180)
+        self.search_edit.setMaximumWidth(300)
         self.search_edit.textChanged.connect(lambda _text: self.render_timer.start())
-        top_row.addWidget(self.search_edit)
+        top_row.addWidget(self.search_edit, 1)
         layout.addLayout(top_row)
-
-        self.summary_label = QLabel()
-        self.summary_label.setObjectName("summaryLabel")
-        layout.addWidget(self.summary_label)
 
         scroll = QScrollArea()
         scroll.setObjectName("toolScroll")
@@ -306,10 +290,11 @@ class ToolboxWindow(QMainWindow):
         scroll.setFrameShape(QFrame.NoFrame)
 
         self.tools_view = QWidget()
+        self.tools_view.setObjectName("toolsView")
         self.tools_layout = QGridLayout(self.tools_view)
         self.tools_layout.setContentsMargins(0, 0, 0, 0)
-        self.tools_layout.setHorizontalSpacing(14)
-        self.tools_layout.setVerticalSpacing(14)
+        self.tools_layout.setHorizontalSpacing(10)
+        self.tools_layout.setVerticalSpacing(10)
         scroll.setWidget(self.tools_view)
         self.tool_scroll = scroll
         layout.addWidget(scroll, 1)
@@ -317,12 +302,15 @@ class ToolboxWindow(QMainWindow):
         return content
 
     def _center_on_screen(self) -> None:
-        screen = QApplication.primaryScreen()
+        screen = self.screen() or QApplication.primaryScreen()
         if not screen:
             return
         available = screen.availableGeometry()
-        self.resize(min(self.width(), available.width()), min(self.height(), available.height()))
-        if self.settings and self.settings.value("geometry"):
+        max_width = max(1, available.width() - 24)
+        max_height = max(1, available.height() - 48)
+        self.setMinimumSize(min(640, max_width), min(420, max_height))
+        self.resize(min(self.width(), max_width), min(self.height(), max_height))
+        if self._restored_geometry:
             frame = self.frameGeometry()
             if frame.intersects(available):
                 self.move(max(available.left(), min(self.x(), available.right() - frame.width() + 1)),
@@ -363,7 +351,8 @@ class ToolboxWindow(QMainWindow):
 
         tools = list(self.filtered_tools())
         total = len(TOOLS)
-        self.summary_label.setText(f"当前显示 {len(tools)} / {total} 个工具")
+        self.page_title.setText("全部工具" if self.active_category == "全部" else self.active_category)
+        self.summary_label.setText(f"{len(tools)} / {total} 个工具")
 
         if not tools:
             self.tools_layout.addWidget(self.empty_label, 0, 0)
@@ -371,8 +360,11 @@ class ToolboxWindow(QMainWindow):
             self.tools_layout.setRowStretch(1, 1)
             return
 
-        width = self.tool_scroll.viewport().width()
-        columns = 3 if width >= 1120 else 2 if width >= 690 else 1
+        # Reserve scrollbar space so filtering cannot make the grid alternate
+        # between column counts when it is close to a breakpoint.
+        width = self.tool_scroll.contentsRect().width() - self.style().pixelMetric(QStyle.PM_ScrollBarExtent)
+        spacing = self.tools_layout.horizontalSpacing()
+        columns = max(1, min(3, (width + spacing) // (CARD_MIN_WIDTH + spacing)))
         for index, spec in enumerate(tools):
             card = self.tool_cards[spec.id]
             row, col = divmod(index, columns)
@@ -452,6 +444,7 @@ class ToolboxWindow(QMainWindow):
             return
         if self.settings:
             self.settings.setValue("geometry", self.saveGeometry())
+            self.settings.setValue("layout_version", WINDOW_LAYOUT_VERSION)
             self.settings.setValue("category", self.active_category)
         self.update_checker.stop()
         if self.update_dialog is not None:
@@ -466,17 +459,6 @@ class ToolboxWindow(QMainWindow):
         self.update_dialog.activateWindow()
         if not self.update_checker.has_update:
             self.update_checker.check()
-
-    def open_manual(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("使用说明")
-        dialog.resize(760, 620)
-        layout = QVBoxLayout(dialog)
-        browser = QTextBrowser()
-        manual = Path(resource_path("quick_start.md"))
-        browser.setMarkdown(manual.read_text(encoding="utf-8") if manual.exists() else "请参阅项目目录中的使用手册。")
-        layout.addWidget(browser)
-        dialog.exec_()
 
     def set_status(self, message: str) -> None:
         self.statusBar().showMessage(message, 5000)
@@ -508,6 +490,7 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         handlers=[RotatingFileHandler(log_dir / "toolbox.log", maxBytes=2_000_000,
                                                       backupCount=2, encoding="utf-8")])
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication([sys.argv[0]])

@@ -15,13 +15,13 @@ QFrame#sidebar {
 
 QLabel#sidebarTitle {
     color: #FFFFFF;
-    font-size: 18pt;
+    font-size: 14pt;
     font-weight: 700;
 }
 
 QLabel#sidebarSubtitle {
     color: #A7B2C1;
-    font-size: 9.5pt;
+    font-size: 8.5pt;
 }
 
 QToolButton#updateButton {
@@ -47,7 +47,7 @@ QDialog#updateDialog {
 
 QLabel#updateHeading {
     color: #111827;
-    font-size: 16pt;
+    font-size: 14pt;
     font-weight: 700;
 }
 
@@ -78,7 +78,7 @@ QPushButton#categoryButton {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
-    padding: 9px 12px;
+    padding: 6px 10px;
     text-align: left;
     font-weight: 600;
 }
@@ -95,32 +95,28 @@ QPushButton#categoryButton[active="true"] {
     border-color: #2E7BCB;
 }
 
-QWidget#content {
+QWidget#content,
+QWidget#toolsView {
     background: #F5F7FA;
 }
 
 QLabel#pageTitle {
     color: #111827;
-    font-size: 22pt;
+    font-size: 15pt;
     font-weight: 700;
 }
 
-QLabel#pageSubtitle {
-    color: #64748B;
-    font-size: 10.5pt;
-}
-
 QLabel#summaryLabel {
-    color: #475569;
-    padding: 2px 0;
+    color: #64748B;
+    font-size: 9pt;
 }
 
 QLineEdit#searchEdit {
     background: #FFFFFF;
     border: 1px solid #CBD5E1;
     border-radius: 8px;
-    padding: 10px 12px;
-    min-height: 22px;
+    padding: 6px 10px;
+    min-height: 20px;
     color: #111827;
 }
 
@@ -176,37 +172,33 @@ QHeaderView::section {
 }
 
 QLabel#toolIcon {
-    min-width: 34px;
-    min-height: 34px;
     background: #E8F1FB;
-    border-radius: 7px;
-    padding: 5px;
+    border: none;
+    border-radius: 6px;
 }
 
 QLabel#toolTitle {
     color: #0F172A;
-    font-size: 13pt;
+    font-size: 11pt;
     font-weight: 700;
 }
 
 QLabel#toolCategory {
-    color: #2563A8;
-    font-size: 9pt;
-    font-weight: 600;
+    color: #64748B;
+    font-size: 8.5pt;
 }
 
 QLabel#toolSummary {
     color: #475569;
-    line-height: 140%;
+    font-size: 9.5pt;
 }
 
-QLabel#tagPill {
-    color: #42526A;
-    background: #EDF2F7;
-    border: 1px solid #D8E0EA;
-    border-radius: 7px;
-    padding: 3px 8px;
-    font-size: 8.5pt;
+QPushButton#openToolButton {
+    min-width: 36px;
+    min-height: 18px;
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 9pt;
 }
 
 QPushButton#primaryButton,

@@ -72,11 +72,11 @@ class UpdateDialog(QDialog):
         self.checker = checker
         self.setObjectName("updateDialog")
         self.setWindowTitle("检查更新")
-        self.resize(500, 380)
-        self.setMinimumSize(420, 300)
+        self.resize(460, 320)
+        self.setMinimumSize(400, 280)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
 
         self.heading = QLabel()
         self.heading.setObjectName("updateHeading")
