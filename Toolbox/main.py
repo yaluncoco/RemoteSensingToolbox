@@ -43,6 +43,7 @@ except ImportError:
 from Toolbox.task_support import bind_task
 from Toolbox.updater import UpdateChecker
 from Toolbox.update_ui import UpdateButton, UpdateDialog
+from Toolbox.update_installer import UpdateInstaller, launch_installer
 from Toolbox.version import APP_ID, APP_TITLE, APP_VERSION
 
 
@@ -155,6 +156,8 @@ class ToolboxWindow(QMainWindow):
         self.settings = QSettings(APP_ID, APP_ID) if persist_settings else None
         self._restored_geometry = False
         self.update_checker = UpdateChecker(self, settings=self.settings)
+        self.update_installer = UpdateInstaller(self)
+        self.update_installer.install_ready.connect(self._launch_update)
         self.update_dialog = None
         self._loader = None
         self._closing_children = False
@@ -163,6 +166,7 @@ class ToolboxWindow(QMainWindow):
         self.render_timer.setInterval(120)
         self.render_timer.timeout.connect(self.render_tools)
         self.open_windows: Dict[str, QWidget] = {}
+        self._detached_visualizations = []
         self.active_category = "全部"
         self.category_buttons: Dict[str, QPushButton] = {}
         self.search_index = {
@@ -404,7 +408,10 @@ class ToolboxWindow(QMainWindow):
                 raise error
             window = window_class()
             window.setAttribute(Qt.WA_DeleteOnClose, True)
-            window.destroyed.connect(lambda _=None, tool_id=spec.id: self._tool_closed(tool_id))
+            # Capture the Python state while the widget is alive. Looking up an
+            # attribute on a destroyed Qt wrapper can abort the Windows process.
+            window.destroyed.connect(lambda _=None, tool_id=spec.id, state=vars(window):
+                                     self._tool_closed(tool_id, state.get("visualization_thread")))
             self.open_windows[spec.id] = window
             window.show()
             window.activateWindow()
@@ -419,8 +426,10 @@ class ToolboxWindow(QMainWindow):
                 f"无法打开「{spec.title}」。\n\n错误信息：{exc}",
             )
 
-    def _tool_closed(self, tool_id):
+    def _tool_closed(self, tool_id, visualization=None):
         self.open_windows.pop(tool_id, None)
+        if visualization is not None and visualization.is_alive():
+            self._detached_visualizations.append(visualization)
         if self._closing_children:
             QTimer.singleShot(0, self.close)
 
@@ -447,18 +456,51 @@ class ToolboxWindow(QMainWindow):
             self.settings.setValue("layout_version", WINDOW_LAYOUT_VERSION)
             self.settings.setValue("category", self.active_category)
         self.update_checker.stop()
+        self.update_installer.stop()
         if self.update_dialog is not None:
             self.update_dialog.close()
         event.accept()
 
     def open_updates(self):
         if self.update_dialog is None:
-            self.update_dialog = UpdateDialog(self.update_checker, self)
+            self.update_dialog = UpdateDialog(self.update_checker, self, self.update_installer)
+            self.update_dialog.install_requested.connect(self.install_update)
         self.update_dialog.show()
         self.update_dialog.raise_()
         self.update_dialog.activateWindow()
         if not self.update_checker.has_update:
             self.update_checker.check()
+
+    def _update_tasks_running(self):
+        self._detached_visualizations = [thread for thread in self._detached_visualizations if thread.is_alive()]
+        if self._detached_visualizations:
+            return True
+        for window in [self, *self.open_windows.values()]:
+            if any(isinstance(value, QThread) and value.isRunning() for value in vars(window).values()):
+                return True
+            visualization = getattr(window, "visualization_thread", None)
+            if visualization is not None and visualization.is_alive():
+                return True
+        return False
+
+    def install_update(self):
+        if self._update_tasks_running():
+            self.update_installer.fail("仍有任务或三维窗口在运行，请完成任务并关闭三维窗口后再安装。")
+            return
+        self.update_installer.prepare_install()
+
+    def _launch_update(self):
+        # Re-check after the asynchronous checksum pass, before any process is started.
+        if self._update_tasks_running():
+            self.update_installer.fail("仍有任务在运行，请完成后再次点击“安装并重启”。")
+            return
+        try:
+            launch_installer(self.update_installer.path)
+        except (OSError, RuntimeError) as exc:
+            self.update_installer.fail(f"无法启动安装：{exc}。当前版本仍可继续使用。")
+            return
+        # The installer waits for this PID to exit, so no running files are replaced.
+        self.close()
 
     def set_status(self, message: str) -> None:
         self.statusBar().showMessage(message, 5000)

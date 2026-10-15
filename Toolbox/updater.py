@@ -40,9 +40,9 @@ def _request_release(result_signal, request_id, api_url, current_version, timeou
         payload = json.loads(data)
     except HTTPError as exc:
         if exc.code == 404:
-            error = "暂时无法读取更新信息，发布地址可能尚未开放。可稍后重试或打开发布页面。"
+            error = "暂时无法读取更新信息，发布地址可能尚未开放。请稍后重试。"
         elif exc.code in (403, 429):
-            error = "更新服务暂时无法访问，请稍后重试或打开发布页面。"
+            error = "更新服务暂时无法访问，请稍后重试。"
         else:
             error = "无法连接更新服务，请检查网络后重试。"
         exc.close()
@@ -52,7 +52,7 @@ def _request_release(result_signal, request_id, api_url, current_version, timeou
         error = ("检查更新超时，请检查网络后重试。" if isinstance(exc.reason, TimeoutError)
                  else "无法连接更新服务，请检查网络后重试。")
     except (ValueError, TypeError):
-        error = "更新信息暂时不可用，请稍后重试或打开发布页面。"
+        error = "更新信息暂时不可用，请稍后重试。"
     except (OSError, HTTPException):
         error = "无法连接更新服务，请检查网络后重试。"
     try:
@@ -73,10 +73,19 @@ def version_key(version: str) -> tuple[int, ...]:
 
 
 @dataclass(frozen=True)
+class InstallerAsset:
+    name: str
+    url: str
+    size: int
+    sha256: str
+
+
+@dataclass(frozen=True)
 class ReleaseInfo:
     version: str
     url: str
     notes: str
+    installer: InstallerAsset | None = None
 
 
 def parse_release(payload: object, repository: str = UPDATE_REPOSITORY) -> ReleaseInfo:
@@ -90,11 +99,29 @@ def parse_release(payload: object, repository: str = UPDATE_REPOSITORY) -> Relea
     notes = payload.get("body") or ""
     if not isinstance(notes, str):
         raise ValueError("Invalid release notes")
+    installer = None
+    name = f"{APP_ID}-{tag.lstrip('vV')}-windows-x64-setup.exe"
+    assets = payload.get("assets", [])
+    if not isinstance(assets, list):
+        raise ValueError("Invalid release assets")
+    matches = [asset for asset in assets if isinstance(asset, dict) and asset.get("name") == name]
+    if len(matches) > 1:
+        raise ValueError("Ambiguous installer")
+    if matches:
+        asset = matches[0]
+        size, digest = asset.get("size"), asset.get("digest", "")
+        if (asset.get("state") == "uploaded" and type(size) is int and 0 < size <= 2_000_000_000
+                and isinstance(digest, str) and re.fullmatch(r"sha256:[0-9a-fA-F]{64}", digest)):
+            installer = InstallerAsset(
+                name, f"https://github.com/{repository}/releases/download/{quote(tag, safe='')}/{quote(name, safe='')}",
+                size, digest[7:].lower(),
+            )
     # Build the destination from the configured repository, never from remote HTML.
     return ReleaseInfo(
         version=tag.lstrip("vV"),
         url=f"https://github.com/{repository}/releases/tag/{quote(tag, safe='')}",
         notes=notes[:30000],
+        installer=installer,
     )
 
 
@@ -184,12 +211,15 @@ class UpdateChecker(QObject):
             try:
                 release = parse_release(payload, self.repository)
             except (ValueError, TypeError):
-                self.error = "更新信息暂时不可用，请稍后重试或打开发布页面。"
+                self.error = "更新信息暂时不可用，请稍后重试。"
             else:
                 self.release = release
                 if self.settings is not None:
                     self.settings.setValue(self._cache_key, json.dumps({
                         "tag_name": payload["tag_name"], "body": release.notes,
+                        "assets": ([{"name": release.installer.name, "size": release.installer.size,
+                                     "digest": "sha256:" + release.installer.sha256, "state": "uploaded"}]
+                                   if release.installer else []),
                     }, ensure_ascii=False))
         if self.error:
             self.state = "error"

@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import QApplication, QLabel
 
 from Toolbox.main import ToolboxWindow
 from Toolbox.updater import UpdateChecker, parse_release, version_key
+from Toolbox.version import UPDATE_REPOSITORY
 
 
 app = QApplication.instance() or QApplication([])
@@ -41,6 +42,8 @@ class ReleaseHandler(BaseHTTPRequestHandler):
         status = {"/missing": 404, "/limited": 429, "/denied": 403, "/broken": 500}.get(self.path, 200)
         version = {"/current": "v1.9.0", "/older": "v1.8.0"}.get(self.path, "v1.10.0")
         payload = {"tag_name": version, "body": "改进图像处理与点云工具。", "draft": False, "prerelease": False}
+        payload["assets"] = [{"name": f"RemoteSensingToolbox-{version[1:]}-windows-x64-setup.exe",
+                              "size": 500, "digest": "sha256:" + "a" * 64, "state": "uploaded"}]
         if self.path == "/preview":
             payload["prerelease"] = True
         body = b"invalid json" if self.path == "/invalid" else json.dumps(payload).encode("utf-8")
@@ -74,7 +77,7 @@ class VersionTests(unittest.TestCase):
 
     def test_download_destination_stays_in_the_configured_repository(self):
         release = parse_release({"tag_name": "v1.1.0", "html_url": "file:///untrusted", "body": "更新说明"})
-        self.assertEqual(release.url, "https://github.com/yaluncoco/RemoteSensingToolbox/releases/tag/v1.1.0")
+        self.assertEqual(release.url, f"https://github.com/{UPDATE_REPOSITORY}/releases/tag/v1.1.0")
         self.assertEqual(release.notes, "更新说明")
 
 
@@ -193,7 +196,7 @@ class UpdateTests(unittest.TestCase):
         self.assertIsNone(window.findChild(QLabel, "sidebarHint"))
         self.assertIsNone(window.findChild(QLabel, "sidebarStatus"))
 
-    def test_click_opens_release_information_and_download_page(self):
+    def test_click_opens_release_information_and_starts_in_app_download(self):
         window = self.window()
         QTest.mouseClick(window.update_button, Qt.LeftButton)
         self.assertTrue(window.update_dialog.isVisible())
@@ -202,10 +205,10 @@ class UpdateTests(unittest.TestCase):
         self.assertIn("新版本", window.update_dialog.heading.text())
         self.assertIn("1.10.0", window.update_dialog.versions.text())
         self.assertTrue(window.update_dialog.check_button.isEnabled())
-        with patch("Toolbox.update_ui.QDesktopServices.openUrl", return_value=True) as open_url:
+        self.assertEqual(window.update_dialog.download_button.text(), "下载更新")
+        with patch.object(window.update_installer, "start") as start:
             QTest.mouseClick(window.update_dialog.download_button, Qt.LeftButton)
-        self.assertEqual(open_url.call_args.args[0].toString(),
-                         "https://github.com/yaluncoco/RemoteSensingToolbox/releases/tag/v1.10.0")
+        self.assertEqual(start.call_args.args[0], window.update_checker.release.installer)
         window.update_dialog.close()
         self.assertTrue(window.update_checker.has_update)
 

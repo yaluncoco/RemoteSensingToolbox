@@ -1,14 +1,15 @@
 """Compact update entry and an on-demand release dialog."""
 from __future__ import annotations
 
-from PyQt5.QtCore import QPointF, Qt, QUrl
-from PyQt5.QtGui import QColor, QDesktopServices, QPainter, QPainterPath, QPen
+from PyQt5.QtCore import QPointF, Qt, pyqtSignal
+from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton,
     QTextBrowser, QToolButton, QVBoxLayout,
 )
 
 from Toolbox.updater import UpdateChecker
+from Toolbox.update_installer import UpdateInstaller
 
 
 class UpdateButton(QToolButton):
@@ -67,13 +68,16 @@ class UpdateButton(QToolButton):
 
 
 class UpdateDialog(QDialog):
-    def __init__(self, checker: UpdateChecker, parent=None):
+    install_requested = pyqtSignal()
+
+    def __init__(self, checker: UpdateChecker, parent=None, installer=None):
         super().__init__(parent)
         self.checker = checker
+        self.installer = installer or UpdateInstaller(self)
         self.setObjectName("updateDialog")
         self.setWindowTitle("检查更新")
-        self.resize(460, 320)
-        self.setMinimumSize(400, 280)
+        self.resize(480, 360)
+        self.setMinimumSize(420, 320)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
@@ -93,7 +97,7 @@ class UpdateDialog(QDialog):
         layout.addWidget(self.message)
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
-        self.progress.setTextVisible(False)
+        self.progress.setTextVisible(True)
         layout.addWidget(self.progress)
         self.notes = QTextBrowser()
         self.notes.setObjectName("releaseNotes")
@@ -112,19 +116,40 @@ class UpdateDialog(QDialog):
         self.check_button.clicked.connect(checker.check)
         actions.addWidget(self.check_button)
         self.download_button = QPushButton()
-        self.download_button.clicked.connect(self.open_download)
+        self.cancel_button = QPushButton("取消下载")
+        self.cancel_button.setObjectName("secondaryButton")
+        self.cancel_button.clicked.connect(self.installer.cancel)
+        actions.addWidget(self.cancel_button)
+        self.download_button.clicked.connect(self.download_or_install)
         actions.addWidget(self.download_button)
         layout.addLayout(actions)
         checker.changed.connect(self.refresh)
+        self.installer.changed.connect(self.refresh)
         self.refresh()
 
     def refresh(self) -> None:
-        checker = self.checker
-        if checker.checking:
+        checker, installer = self.checker, self.installer
+        asset = checker.release.installer if checker.has_update else None
+        matches = asset is not None and asset == installer.asset
+        if installer.busy:
+            if installer.state == "verifying":
+                heading, message = "正在校验安装包…", "正在验证文件完整性，请稍候。"
+            else:
+                heading = "正在下载更新…"
+                message = (f"已下载 {installer.received / 1048576:.1f} / {installer.total / 1048576:.1f} MB。"
+                           "关闭此窗口后仍会继续下载。")
+        elif matches and installer.state == "ready":
+            heading = "更新已准备好"
+            message = installer.error or "安装包已通过校验。安装时将退出工具箱，完成后自动启动新版。便携版将安装为当前用户版本。"
+        elif matches and installer.state in ("error", "cancelled"):
+            heading = "下载失败" if installer.state == "error" else "下载已取消"
+            message = installer.error or "可随时重新下载，不影响当前版本使用。"
+        elif checker.checking:
             heading, message = "正在检查更新…", "正在获取最新版本信息，请稍候。"
         elif checker.has_update:
             heading = "发现新版本"
-            message = checker.error or "新版已发布，可前往下载并安装。"
+            message = (checker.error or (f"可在此下载并安装新版（{asset.size / 1048576:.1f} MB）。"
+                       if asset else "此版本暂无可校验的 Windows 安装包，请稍后重新检查。"))
         elif checker.error:
             heading, message = "暂时无法检查更新", checker.error
         elif checker.state == "current":
@@ -137,15 +162,32 @@ class UpdateDialog(QDialog):
         if checker.release is not None:
             versions += f"    最新版本  {checker.release.version}"
         self.versions.setText(versions)
-        self.progress.setVisible(checker.checking)
-        self.check_button.setEnabled(not checker.checking)
+        self.progress.setVisible(checker.checking or installer.busy)
+        if installer.state == "downloading" and installer.busy and installer.total:
+            self.progress.setRange(0, 100)
+            self.progress.setValue(min(100, int(installer.received * 100 / installer.total)))
+        else:
+            self.progress.setRange(0, 0)
+        self.check_button.setEnabled(not checker.checking and not installer.busy)
         self.check_button.setText("检查中…" if checker.checking else "重新检查")
+        self.cancel_button.setVisible(installer.busy)
+        self.cancel_button.setText("取消校验" if installer.state == "verifying" else "取消下载")
         self.notes.setVisible(checker.has_update)
-        self.notes.setPlainText((checker.release.notes or "此版本暂无更新说明。") if checker.has_update else "")
-        self.download_button.setText("前往下载" if checker.has_update else "发布页面")
+        notes = (checker.release.notes or "此版本暂无更新说明。") if checker.has_update else ""
+        if self.notes.toPlainText() != notes:
+            self.notes.setPlainText(notes)
+        self.download_button.setVisible(not installer.busy and checker.has_update)
+        self.download_button.setEnabled(asset is not None and not checker.checking)
+        self.download_button.setText("安装并重启" if matches and installer.state == "ready" else
+                                     "重新下载" if matches and installer.state in ("error", "cancelled") else "下载更新")
 
-    def open_download(self) -> None:
-        url = self.checker.release.url if self.checker.has_update else self.checker.releases_url
-        if not QDesktopServices.openUrl(QUrl(url)):
-            self.message.setText(f"无法打开浏览器，请复制此地址访问：\n{url}")
-            self.message.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    def download_or_install(self) -> None:
+        if not self.checker.has_update or self.checker.checking or self.installer.busy:
+            return
+        asset = self.checker.release.installer
+        if asset is None:
+            return
+        if self.installer.asset == asset and self.installer.state == "ready":
+            self.install_requested.emit()
+        else:
+            self.installer.start(asset)

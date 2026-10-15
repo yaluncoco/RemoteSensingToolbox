@@ -1,5 +1,11 @@
 #ifndef AppVersion
-  #define AppVersion "1.2.0"
+  #define AppVersion "1.3.0"
+#endif
+#ifndef AppIdentity
+  #define AppIdentity "{{E07C5774-6B8F-45DF-A905-A416A7D4CB9C}"
+#endif
+#ifndef AppDisplayName
+  #define AppDisplayName "遥感与点云综合工具箱"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\dist\RemoteSensingToolbox"
@@ -9,14 +15,14 @@
 #endif
 
 [Setup]
-AppId={{E07C5774-6B8F-45DF-A905-A416A7D4CB9C}
-AppName=遥感与点云综合工具箱
+AppId={#AppIdentity}
+AppName={#AppDisplayName}
 AppVersion={#AppVersion}
-AppVerName=遥感与点云综合工具箱 {#AppVersion}
+AppVerName={#AppDisplayName} {#AppVersion}
 AppPublisher=yaluncoco
 AppPublisherURL=https://github.com/yaluncoco/RemoteSensingToolbox
 DefaultDirName={localappdata}\Programs\RemoteSensingToolbox
-DefaultGroupName=遥感与点云综合工具箱
+DefaultGroupName={#AppDisplayName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -58,3 +64,46 @@ Name: "{autodesktop}\遥感与点云综合工具箱"; Filename: "{app}\RemoteSen
 
 [Run]
 Filename: "{app}\RemoteSensingToolbox.exe"; Description: "启动遥感与点云综合工具箱"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\RemoteSensingToolbox.exe"; Flags: nowait; Check: RestartAfterUpdate
+
+[Code]
+const
+  SynchronizeAccess = $00100000;
+
+function OpenProcess(Access: LongWord; Inherit: Boolean; ProcessId: LongWord): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Milliseconds: LongWord): LongWord;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function RestartAfterUpdate: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RESTARTAPP|0}') = '1');
+end;
+
+function InitializeSetup: Boolean;
+var
+  ParentId: Integer;
+  ParentHandle: THandle;
+  WaitResult: LongWord;
+begin
+  Result := True;
+  ParentId := StrToIntDef(ExpandConstant('{param:UPDATEPID|0}'), 0);
+  if ParentId <= 0 then
+    Exit;
+  ParentHandle := OpenProcess(SynchronizeAccess, False, ParentId);
+  if ParentHandle = 0 then
+    Exit; { The old application already exited. }
+  try
+    Log('Waiting for the previous application process to exit.');
+    WaitResult := WaitForSingleObject(ParentHandle, 60000);
+    if WaitResult <> 0 then
+    begin
+      MsgBox('旧版本尚未退出，更新未开始。请关闭工具箱后重新安装。', mbError, MB_OK);
+      Result := False;
+    end;
+  finally
+    CloseHandle(ParentHandle);
+  end;
+end;

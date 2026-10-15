@@ -186,6 +186,23 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
             return "Open3D PLY/PCD I/O; voxel sampling with RGB and label preservation"
         check("point-cloud-processing", point_cloud_io)
 
+        def update_installer_validation():
+            import hashlib
+            import threading
+            from Toolbox.updater import parse_release
+            from Toolbox.update_installer import verify_installer
+            content = b"MZ" + b"offline installer integrity fixture"
+            name = "RemoteSensingToolbox-99.0.0-windows-x64-setup.exe"
+            release = parse_release({"tag_name": "v99.0.0", "assets": [{
+                "name": name, "state": "uploaded", "size": len(content),
+                "digest": "sha256:" + hashlib.sha256(content).hexdigest(),
+            }]})
+            installer = root / name
+            installer.write_bytes(content)
+            verify_installer(installer, release.installer, threading.Event())
+            return "Installer metadata, SHA-256/size verification, Unicode cache path; no installer executed"
+        check("update-installer-validation", update_installer_validation)
+
         def prediction_visualization():
             import numpy as np
             from PointCloud.visualization_data import (
