@@ -26,13 +26,13 @@
 
 ## 发行维护
 
-更新源：[yaluncoco/RemoteSensingToolbox-Releases](https://github.com/yaluncoco/RemoteSensingToolbox-Releases)。本仓库仅存放发行说明、安装包、便携包和校验文件；源码在原项目仓库维护。
+软件内更新源：[yaluncoco/RemoteSensingToolbox-Releases](https://github.com/yaluncoco/RemoteSensingToolbox-Releases)，该仓库仅存放发行文件。[原项目仓库](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest)的每个正式 Release 也必须在 Assets 中提供同一套文件，方便用户直接下载。
 
 1. 更新 `Toolbox/version.py` 的 `APP_VERSION` 和安装器默认版本，完成测试与打包。
-2. 在发行仓库创建数字版本的正式 Release，例如 `v1.3.0`，先作为草稿上传完整资产。
-3. 安装包必须使用 `RemoteSensingToolbox-1.3.0-windows-x64-setup.exe` 这样的准确名称；同时提供便携 ZIP、`SHA256SUMS.txt` 和验证报告。
-4. 确认 GitHub 资产状态为 `uploaded`，大小正确，API 返回 `sha256:...` digest，且与本地校验值一致，再公开发布并设为 Latest。
-5. 通过匿名 GitHub API 读取最新版本，验证安装包可下载；源码仓库可同步保留 Release 以兼容旧客户端的更新入口。
+2. 在原项目仓库和发行仓库创建同一数字版本的 Release，例如 `v1.3.0`，先作为草稿上传完整资产。
+3. 两个仓库的 Assets 均需上传安装包、便携 ZIP、`SHA256SUMS.txt` 和验证报告。安装包必须使用 `RemoteSensingToolbox-1.3.0-windows-x64-setup.exe` 这样的准确名称；原项目 Release 不能只提供外部链接或 GitHub 自动生成的源码压缩包。
+4. 确认两个仓库的资产状态为 `uploaded`，大小正确，API 返回 `sha256:...` digest，且均与同一套本地文件一致，再公开发布并设为 Latest。
+5. 通过匿名 GitHub API 读取最新版本，验证安装包可下载，并检查原项目 Release 的 Assets 已完整列出可下载文件。
 
 客户端只接受正式发布版本，不安装草稿、预发布或版本号不高于当前版本的更新。下载地址根据固定发行仓库、版本号和资产名称构造，不使用远程返回的任意链接。下载使用 HTTPS，重定向不允许降级到 HTTP。程序不内置 GitHub 访问令牌。
 

@@ -6,11 +6,13 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 ## 下载与安装
 
-在 [GitHub Releases](https://github.com/yaluncoco/RemoteSensingToolbox-Releases/releases/latest) 下载：
+在[本项目 GitHub Release 的 Assets](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 中直接下载：
 
 - `RemoteSensingToolbox-1.3.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
 - `RemoteSensingToolbox-1.3.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
+
+每个正式版本都在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告，并将相同文件同步到公开发行仓库，供软件内更新使用。
 
 安装包包含 Python、Qt、GIS 和点云运行库，无需另装 Python/Conda。安装后可从开始菜单打开，在系统“已安装的应用”中卸载。发行包尚未配置代码签名。
 
