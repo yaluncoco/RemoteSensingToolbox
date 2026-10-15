@@ -8,8 +8,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在 [GitHub Releases](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 下载：
 
-- `RemoteSensingToolbox-1.1.1-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.1.1-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.2.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.2.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 安装包包含 Python、Qt、GIS 和点云运行库，无需另装 Python/Conda。安装后可从开始菜单打开，在系统“已安装的应用”中卸载。发行包尚未配置代码签名。
@@ -42,11 +42,14 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 ## 本版改进
 
-- 收紧主窗口、侧栏、标题和控件间距，标题与搜索同排，默认窗口可完整展示 8 个工具。
-- 工具卡片保留名称、简短用途、分类和打开按钮，移除重复标签；小窗口自动减少列数并支持纵向滚动。
-- 跟随 Windows 实际显示缩放比例，避免 150% 被取整为 200%；文字换行时卡片高度自动调整。
-- 移除应用内使用说明窗口、安装包中的说明副本和开始菜单说明快捷方式，操作指南统一在 GitHub 维护。
-- 升级后首次启动采用新的紧凑窗口尺寸，后续继续记住用户调整后的大小。
+- 预测分析的自定义颜色可视化支持 XYZ、XYZ + Label、XYZ + RGB、XYZ + RGB + Label、带法向量及自定义列位置。
+- 按数据排列提供标签颜色、原始 RGB 或统一单色；列号从 1 开始，并直接显示坐标、标签和 RGB 对应位置。
+- 支持 TXT / XYZ / CSV / PTS 数值文本、空白/逗号/分号分隔、跳过表头；读取选项与前 5 行预览默认折叠。
+- 开始前显示样本检查结果，运行时检查完整文件；错误列数、非整数标签、无效坐标和越界颜色会明确提示，标签编号原样保留。
+- 保留预测分析原有页面结构和样式；按需显示自定义参数，小窗口使用纵向滚动。
+- 修复后台错误消息传递和截图成功判断，支持中文路径 PNG/JPEG 截图，失败时保留原有文件。
+
+具体格式与示例见 [点云可视化指南](docs/POINT-CLOUD-VISUALIZATION.md)。
 
 此前版本的处理与稳定性改进：
 
@@ -88,7 +91,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 & "$env:LOCALAPPDATA\Programs\RemoteSensingToolbox\RemoteSensingToolbox.exe" --self-test --report "$env:TEMP\toolbox-self-test.json"
 ```
 
-本版安装与界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，此前的更新功能验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
+本版安装与界面验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，此前的紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，此前的更新功能验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 
 自检包含 8 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 

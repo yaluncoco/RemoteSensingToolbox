@@ -14,23 +14,33 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout
                              QProgressBar, QMessageBox, QTabWidget, QSizePolicy,
                              QSpinBox, QDoubleSpinBox, QFormLayout, QTextEdit, QLineEdit, QComboBox)
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtWidgets import QScrollArea
 from Toolbox.version import APP_VERSION
 from PyQt5.QtGui import QFont, QIcon
+from PointCloud.visualization_options import VisualizationFormatWidget
 
 # Import worker classes and visualization functions
-from workers import (PepperProcessWorker, GenericConvertWorker,
+from PointCloud.workers import (PepperProcessWorker, GenericConvertWorker,
                      ConvertScanNetWorker, CheckShapeWorker, MergePredictionWorker, DownsampleWorker)
-from visualization import (_run_visualization, _run_sequential_visualization,
+from PointCloud.visualization import (_run_visualization, _run_sequential_visualization,
                            prepare_point_cloud_for_visualization, _run_custom_color_visualization)
 
 
+class _VisualizationSignals(QObject):
+    # No window parent: a renderer may outlive a closed tool window. Connections to
+    # destroyed widgets disconnect automatically, while the thread keeps this alive.
+    status = pyqtSignal(str)
+    finished = pyqtSignal()
+
+
 class PointCloudProcessor(QMainWindow):
+
     def __init__(self):
         super().__init__()
         self.point_cloud = None
         self.visualization_thread = None
+        self.custom_visualization_signals = _VisualizationSignals()
 
         # Workers
         self.pepper_worker = None
@@ -931,34 +941,55 @@ class PointCloudProcessor(QMainWindow):
         vis_group.setStyleSheet(self.get_groupbox_style())
         vis_layout = QFormLayout(vis_group);
         vis_layout.setSpacing(10)
+        vis_layout.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        vis_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
-        vis_info = QLabel("加载TXT点云文件 (X Y Z ... Label ...)，并根据用户定义的颜色映射（第7列，索引6的标签）进行可视化。\n"
-                          "关闭可视化窗口后可自动保存截图。")
+        vis_info = QLabel("选择文件与数据排列，再按标签、原始 RGB 或单色显示。截图为可选项。")
         vis_info.setWordWrap(True);
         vis_info.setStyleSheet(self.get_info_label_style())
         vis_layout.addRow(vis_info)
 
-        self.vis_custom_input_label = QLabel("待可视化TXT文件: 未选择");
+        self.vis_custom_input_label = QLabel("待可视化文件: 未选择");
         self.vis_custom_input_label.setWordWrap(True)
+        self.vis_custom_input_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         btn_sel_vis_input = QPushButton("选择点云文件");
         btn_sel_vis_input.clicked.connect(self.select_vis_custom_input_txt)
         btn_sel_vis_input.setStyleSheet(self.get_button_style("secondary"))
         vis_layout.addRow(btn_sel_vis_input, self.vis_custom_input_label)
 
-        vis_layout.addRow(QLabel("颜色映射 (每行: `标签号: [R, G, B]`):"))
+        self.vis_format_widget = VisualizationFormatWidget()
+        vis_layout.addRow(self.vis_format_widget)
+
+        self.vis_color_map_widget = QWidget()
+        color_layout = QVBoxLayout(self.vis_color_map_widget)
+        color_layout.setContentsMargins(0, 0, 0, 0)
+        color_help = QLabel("标签颜色（每行：标签号: [R, G, B]；未指定时为灰色）")
+        color_help.setWordWrap(True)
+        color_layout.addWidget(color_help)
         self.vis_custom_color_map_edit = QTextEdit()
         self.vis_custom_color_map_edit.setFont(QFont("Courier New", 10))
         self.vis_custom_color_map_edit.setPlainText(
-            "# 示例:\n 0: [0.0, 0.0, 1.0]  # 标签0为蓝色\n 1: [1.0, 0.0, 0.0]  # 标签1为红色\n 2: [1.0, 1.0, 1.0]  # 标签2为白色\n 3: [0, 255, 0]       # 标签3为绿色 (0-255范围也可以)\n# 未指定的标签将显示为灰色")
-        self.vis_custom_color_map_edit.setMinimumHeight(100)
-        vis_layout.addRow(self.vis_custom_color_map_edit)
+            "0: [0, 0, 255]    # 标签0：蓝色\n1: [255, 0, 0]    # 标签1：红色\n2: [255, 165, 0]  # 标签2：橙色\n3: [0, 180, 0]    # 标签3：绿色")
+        self.vis_custom_color_map_edit.setFixedHeight(110)
+        color_layout.addWidget(self.vis_custom_color_map_edit)
+        vis_layout.addRow(self.vis_color_map_widget)
+        self.vis_format_widget.color_mode_changed.connect(
+            lambda mode: self.vis_color_map_widget.setVisible(mode == "label"))
 
         self.vis_custom_screenshot_label = QLabel("截图保存路径: 未选择 (可选)");
         self.vis_custom_screenshot_label.setWordWrap(True)
         btn_sel_screenshot = QPushButton("选择截图保存路径");
         btn_sel_screenshot.clicked.connect(self.select_vis_custom_screenshot_path)
         btn_sel_screenshot.setStyleSheet(self.get_button_style("secondary"))
-        vis_layout.addRow(btn_sel_screenshot, self.vis_custom_screenshot_label)
+        screenshot_buttons = QHBoxLayout()
+        screenshot_buttons.addWidget(btn_sel_screenshot)
+        clear_screenshot = QPushButton("不保存截图")
+        clear_screenshot.setStyleSheet(self.get_button_style("secondary"))
+        clear_screenshot.clicked.connect(self.clear_vis_custom_screenshot)
+        screenshot_buttons.addWidget(clear_screenshot)
+        screenshot_buttons.addStretch()
+        vis_layout.addRow(screenshot_buttons)
+        vis_layout.addRow(self.vis_custom_screenshot_label)
 
         self.vis_custom_start_button = QPushButton("开始可视化");
         self.vis_custom_start_button.clicked.connect(self.start_custom_color_visualization)
@@ -971,6 +1002,8 @@ class PointCloudProcessor(QMainWindow):
         self.vis_custom_status_label.setWordWrap(True);
         self.vis_custom_status_label.setAlignment(Qt.AlignCenter)
         vis_layout.addRow(QLabel("状态:"), self.vis_custom_status_label)
+        self.custom_visualization_signals.status.connect(self.vis_custom_status_label.setText)
+        self.custom_visualization_signals.finished.connect(self.on_custom_visualization_finished)
         main_layout.addWidget(vis_group)
         main_layout.addStretch(1)
         return analysis_widget
@@ -1335,7 +1368,8 @@ class PointCloudProcessor(QMainWindow):
         self.merge_stop_button.setEnabled(is_merge_active)
 
         # Visualize Custom (not a worker, but disable button if other workers run)
-        self.vis_custom_start_button.setEnabled(not is_processing)
+        self.vis_custom_start_button.setEnabled(
+            not is_processing and not (self.visualization_thread and self.visualization_thread.is_alive()))
 
         is_ds_single_active = active_task_type == "downsample_single"
         is_ds_batch_active = active_task_type == "downsample_batch"
@@ -1825,11 +1859,7 @@ class PointCloudProcessor(QMainWindow):
             "Text Files (*.txt);;All Files (*)",
             default_suffix=".txt"
         )
-        if path:
-            self.vis_custom_input_txt_path = path
-            if hasattr(self, 'vis_custom_input_label') and self.vis_custom_input_label:
-                self.vis_custom_input_label.setText(f"待可视化TXT: ...{os.sep}{os.path.basename(path)}")
-                self.vis_custom_input_label.setToolTip(path)  # Auto-fill for vis
+        # Only successful merge output is forwarded to visualization.
 
     def start_merge_predictions(self):
         if not self.merge_orig_txt_path or not self.merge_pred_txt_path or not self.merge_output_txt_path: QMessageBox.warning(
@@ -1849,6 +1879,7 @@ class PointCloudProcessor(QMainWindow):
         self.vis_custom_input_txt_path = merged_file_path  # Store for visualization tab
         self.vis_custom_input_label.setText(f"待可视化TXT: ...{os.sep}{os.path.basename(merged_file_path)}")
         self.vis_custom_input_label.setToolTip(merged_file_path)
+        self.vis_format_widget.set_path(merged_file_path, merged=True)
         self.merge_status_label.setText(f"合并完成! 输出: {os.path.basename(merged_file_path)}")
 
     def on_merge_prediction_finished(self):
@@ -1864,8 +1895,19 @@ class PointCloudProcessor(QMainWindow):
 
     # Visualize Custom
     def select_vis_custom_input_txt(self):
-        self._select_file("选择待可视化TXT文件", "vis_custom_input_txt_path", self.vis_custom_input_label,
-                          "Text Files (*.txt);;All Files (*)")
+        path = self._select_file("选择待可视化文件", "vis_custom_input_txt_path", self.vis_custom_input_label,
+                                "点云文本 (*.txt *.xyz *.csv *.pts);;所有文件 (*)")
+        if path:
+            self.vis_format_widget.set_path(path)
+
+    def clear_vis_custom_screenshot(self):
+        self.vis_custom_screenshot_path = None
+        self.vis_custom_screenshot_label.setText("截图保存路径: 未选择 (可选)")
+        self.vis_custom_screenshot_label.setToolTip("")
+
+    def on_custom_visualization_finished(self):
+        self.vis_custom_start_button.setEnabled(not self.is_worker_running())
+        self.vis_custom_start_button.setText("开始可视化")
 
     def select_vis_custom_screenshot_path(self):
         self._select_save_file("选择截图保存路径", "vis_custom_screenshot_path", self.vis_custom_screenshot_label,
@@ -1873,7 +1915,7 @@ class PointCloudProcessor(QMainWindow):
 
     def start_custom_color_visualization(self):
         if not self.vis_custom_input_txt_path: QMessageBox.warning(self, "选择文件",
-                                                                   "请选择要可视化的点云TXT文件。"); return
+                                                                   "请选择要可视化的点云文本文件。"); return
         if self.is_worker_running(): QMessageBox.warning(self, "正在处理", "其他任务进行中，请稍候。"); return
         if self.visualization_thread and self.visualization_thread.is_alive(): QMessageBox.warning(self, "可视化进行中",
                                                                                                    "另一个可视化窗口似乎仍在运行。"); return
@@ -1882,17 +1924,17 @@ class PointCloudProcessor(QMainWindow):
         screenshot_file = self.vis_custom_screenshot_path if self.vis_custom_screenshot_path else None  # Pass None if not set
 
         self.vis_custom_status_label.setText("准备自定义颜色可视化...")
-        QApplication.processEvents()
-
-        status_callback = lambda msg, sl=self.vis_custom_status_label: QTimer.singleShot(0, lambda: sl.setText(msg))
+        self.vis_custom_start_button.setEnabled(False)
+        self.vis_custom_start_button.setText("可视化进行中…")
 
         self.visualization_thread = threading.Thread(target=_run_custom_color_visualization,
                                                      args=(
                                                      self.vis_custom_input_txt_path, color_map_str, screenshot_file,
-                                                     status_callback))
+                                                     self.custom_visualization_signals.status.emit),
+                                                     kwargs={"options": self.vis_format_widget.options(),
+                                                             "finished_func": self.custom_visualization_signals.finished.emit})
         self.visualization_thread.daemon = True
         self.visualization_thread.start()
-        QTimer.singleShot(50, lambda: self.vis_custom_status_label.setText("自定义可视化已启动 (请查看Open3D窗口)"))
 
     def select_downsample_single_input_file(self):
         self._select_file("选择输入TXT文件", "downsample_single_input_path", self.downsample_single_input_label,

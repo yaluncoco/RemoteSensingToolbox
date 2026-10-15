@@ -6,6 +6,11 @@ import open3d as o3d
 from PyQt5.QtCore import QTimer  # QCoreApplication removed as direct GUI access from thread is risky
 import ast  # For parsing color map string
 import traceback
+from Toolbox.file_io import atomic_output
+from PointCloud.file_io import _ascii_workspace
+from PointCloud.visualization_data import (
+    VisualizationOptions, read_visualization_text, extract_visualization_data, apply_label_colors,
+)
 
 
 def _run_visualization(geometries, window_name="点云可视化", width=1024, height=768):
@@ -66,128 +71,100 @@ def _run_sequential_visualization(original_pcd, processed_pcd, original_path, st
 
 
 def parse_color_map_string_for_vis(text_map_str, status_update_func=None):
-    """ Parses a string representation of a color map into a dictionary for visualization. """
+    """Parse label colors without silently accepting malformed or duplicate entries."""
     color_map = {}
     default_color = [0.5, 0.5, 0.5]
-    for line_num, line in enumerate(text_map_str.splitlines()):
-        line = line.strip()
-        if not line or line.startswith('#'):
+    for line_num, line in enumerate(text_map_str.splitlines(), 1):
+        line = line.split('#', 1)[0].strip()
+        if not line:
             continue
         try:
-            if '#' in line: line = line.split('#', 1)[0].strip()
             key_str, value_str = line.split(':', 1)
             key = int(key_str.strip())
-            value_list = ast.literal_eval(value_str.strip())
-
-            if not (isinstance(value_list, list) and len(value_list) == 3 and all(
-                    isinstance(v, (int, float)) for v in value_list)):
-                raise ValueError("颜色值必须是包含3个数字的列表 (R,G,B)")
-
-            parsed_color = []
-            for v_idx, v_comp in enumerate(value_list):
-                v_comp_float = float(v_comp)
-                if 0 <= v_comp_float <= 1:
-                    parsed_color.append(v_comp_float)
-                elif 1 < v_comp_float <= 255:
-                    parsed_color.append(v_comp_float / 255.0)
-                else:
-                    raise ValueError(f"颜色分量 {v_comp_float} (索引 {v_idx}) 超出范围 [0, 255] 或 [0, 1]")
-            color_map[key] = parsed_color
-
-        except Exception as e:
-            err_msg = f"警告: 无法解析颜色映射行 {line_num + 1}: '{line}'. 错误: {e}"
-            print(err_msg)
-            if status_update_func: QTimer.singleShot(0, lambda msg=err_msg: status_update_func(msg))
-
-    if not color_map and text_map_str.strip():
-        warn_msg = "警告: 颜色映射为空或所有行都无法解析。将使用默认颜色。"
-        print(warn_msg)
-        if status_update_func: QTimer.singleShot(0, lambda msg=warn_msg: status_update_func(msg))
-
+            values = ast.literal_eval(value_str.strip())
+            if not (isinstance(values, list) and len(values) == 3 and all(
+                    isinstance(v, (int, float)) and not isinstance(v, bool) for v in values)):
+                raise ValueError("颜色值必须是包含 3 个数字的列表 [R, G, B]")
+            color = np.asarray(values, dtype=float)
+            if not np.isfinite(color).all() or np.any((color < 0) | (color > 255)):
+                raise ValueError("颜色值必须位于 0–1 或 0–255 范围")
+            if key in color_map:
+                raise ValueError(f"标签 {key} 重复，请每个标签只写一行")
+            color_map[key] = (color / (255 if color.max() > 1 else 1)).tolist()
+        except Exception as exc:
+            raise ValueError(f"颜色映射第 {line_num} 行有误：{exc}") from exc
     return color_map, default_color
 
 
-def _run_custom_color_visualization(pcd_txt_path, color_map_text_str, screenshot_path=None, status_update_func=None):
-    """
-    Loads a TXT point cloud, applies custom colors based on labels (column 6),
-    visualizes it, and optionally saves a screenshot.
-    """
+def _run_custom_color_visualization(pcd_txt_path, color_map_text_str, screenshot_path=None,
+                                    status_update_func=None, options=None, finished_func=None):
+    """Read the selected layout. GUI callbacks must be thread-safe (Qt signals)."""
+    options = options or VisualizationOptions()
+    vis = None
+    window_created = False
+
+    def status(message):
+        if status_update_func:
+            status_update_func(message)
+
     try:
-        if status_update_func: QTimer.singleShot(0, lambda: status_update_func(
-            f"加载点云: {os.path.basename(pcd_txt_path)}..."))
-
-        try:
-            data = np.loadtxt(pcd_txt_path)
-        except Exception as e:
-            raise ValueError(f"无法加载点云文件 '{pcd_txt_path}': {e}")
-
-        if data.ndim == 1 and data.shape[0] == 0: raise ValueError("点云文件为空。")
-        if data.ndim == 1: data = data.reshape(1, -1)
-        if data.shape[1] < 7: raise ValueError(f"点云文件列数 ({data.shape[1]}) 不足7列，无法获取标签 (索引6)。")
-
-        points = data[:, 0:3]
-        labels = data[:, 6].astype(int)
-
-        if status_update_func: QTimer.singleShot(0, lambda: status_update_func("解析颜色映射..."))
-        color_map_dict, default_color_val = parse_color_map_string_for_vis(color_map_text_str, status_update_func)
-
-        unique_labels, inverse_indices = np.unique(labels, return_inverse=True)
-        color_palette = np.array(
-            [color_map_dict.get(int(label), default_color_val) for label in unique_labels],
-            dtype=float
-        )
-        applied_colors = color_palette[inverse_indices]
+        status(f"加载并检查点云: {os.path.basename(pcd_txt_path)}...")
+        data = read_visualization_text(pcd_txt_path, options)
+        points, labels, colors = extract_visualization_data(data, options)
+        detail = f"{len(points):,} 个点"
+        if labels is not None:
+            color_map, default_color = parse_color_map_string_for_vis(color_map_text_str)
+            colors = apply_label_colors(labels, color_map, default_color)
+            unique_labels = np.unique(labels)
+            missing = sum(int(label) not in color_map for label in unique_labels)
+            detail += f"，{len(unique_labels)} 类标签"
+            if missing:
+                detail += f"（{missing} 类未配色，显示灰色）"
 
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(applied_colors)
-
-        if not pcd.has_points():
-            raise ValueError("处理后点云为空。")
-
+        pcd.colors = o3d.utility.Vector3dVector(colors)
         window_title = f"自定义颜色可视化: {os.path.basename(pcd_txt_path)}"
-        if screenshot_path: window_title += " (关闭窗口后自动保存截图)"
-
-        if status_update_func: QTimer.singleShot(0, lambda: status_update_func("启动可视化窗口..."))
-
+        if screenshot_path:
+            window_title += " (关闭窗口后自动保存截图)"
+        status(f"启动可视化窗口：{detail}...")
         vis = o3d.visualization.Visualizer()
-        vis.create_window(window_name=window_title, width=1280, height=720)
-        vis.add_geometry(pcd)
-
-        # Set render options for better visualization (optional)
+        window_created = vis.create_window(window_name=window_title, width=1280, height=720)
+        if not window_created:
+            raise RuntimeError("无法创建三维窗口，请检查显卡驱动和 OpenGL 支持。")
+        if not vis.add_geometry(pcd):
+            raise RuntimeError("点云无法加入三维窗口。")
         opt = vis.get_render_option()
-        opt.point_size = 2.0  # Default is 5, can be too large for dense clouds
-        # opt.background_color = np.asarray([0.15, 0.15, 0.15])  # Darker gray
-        opt.background_color = np.asarray([1.0, 1.0, 1.0])  # 白色背景
-        vis.run()  # Blocking call, user adjusts view
+        opt.point_size = 2.0
+        opt.background_color = np.asarray([1.0, 1.0, 1.0])
+        status(f"可视化中：{detail}；关闭三维窗口后返回。")
+        vis.run()
 
         if screenshot_path:
-            if status_update_func: QTimer.singleShot(0, lambda: status_update_func(
-                f"正在保存截图到 {os.path.basename(screenshot_path)}..."))
-
-            # Ensure directory exists for screenshot
-            screenshot_dir = os.path.dirname(screenshot_path)
-            if screenshot_dir:  # If path includes a directory
-                os.makedirs(screenshot_dir, exist_ok=True)
-
-            success = vis.capture_screen_image(screenshot_path, do_render=True)
-            if success:
-                msg = f"截图已保存: {os.path.basename(screenshot_path)}"
-                print(msg)
-                if status_update_func: QTimer.singleShot(0, lambda m=msg: status_update_func(m))
-            else:
-                msg = f"错误: 保存截图失败 {os.path.basename(screenshot_path)}"
-                print(msg)
-                if status_update_func: QTimer.singleShot(0, lambda m=msg: status_update_func(m))
-
-        vis.destroy_window()
-        if status_update_func: QTimer.singleShot(0, lambda: status_update_func("自定义颜色可视化完成。"))
-
-    except Exception as e:
-        error_msg = f"自定义颜色可视化出错: {str(e)}"
-        print(f"--- _run_custom_color_visualization Error ---")
+            status(f"正在保存截图到 {os.path.basename(screenshot_path)}...")
+            # Open3D returns None even on success. Check the file, not the return value.
+            # An ASCII temporary PNG also avoids Open3D's Windows Unicode-path issue.
+            from PIL import Image
+            with _ascii_workspace() as directory:
+                capture = directory / "capture.png"
+                vis.capture_screen_image(str(capture), do_render=True)
+                if not capture.is_file() or not capture.stat().st_size:
+                    raise OSError("保存截图失败。")
+                with Image.open(capture) as screenshot, atomic_output(screenshot_path) as output:
+                    screenshot.convert("RGB").save(output)
+            status(f"可视化完成：{detail}；截图已保存至 {screenshot_path}")
+        else:
+            status(f"可视化完成：{detail}。")
+    except Exception as exc:
         traceback.print_exc()
-        if status_update_func: QTimer.singleShot(0, lambda msg=error_msg: status_update_func(msg))
+        status(f"自定义颜色可视化出错: {exc}")
+    finally:
+        try:
+            if vis is not None and window_created:
+                vis.destroy_window()
+        finally:
+            if finished_func:
+                finished_func()
 
 
 def prepare_point_cloud_for_visualization(pcd, default_color=None):

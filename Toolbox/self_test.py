@@ -186,6 +186,22 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
             return "Open3D PLY/PCD I/O; voxel sampling with RGB and label preservation"
         check("point-cloud-processing", point_cloud_io)
 
+        def prediction_visualization():
+            import numpy as np
+            from PointCloud.visualization_data import (
+                VisualizationOptions, read_visualization_text, extract_visualization_data, apply_label_colors,
+            )
+            path = root / "预测 点云.csv"
+            path.write_text("X,Y,Z,Label\n1,2,3,1\n4,5,6,-1\n", encoding="utf-8-sig")
+            options = VisualizationOptions(layout="xyz_label", skip_rows=1)
+            points, labels, _ = extract_visualization_data(read_visualization_text(path, options), options)
+            np.testing.assert_array_equal(points, [[1, 2, 3], [4, 5, 6]])
+            np.testing.assert_array_equal(labels, [1, -1])
+            np.testing.assert_array_equal(apply_label_colors(labels, {1: [1, 0, 0]}, [.5, .5, .5]),
+                                          [[1, 0, 0], [.5, .5, .5]])
+            return "XYZ + Label; CSV/BOM/header/Unicode; original label IDs and fallback colors"
+        check("prediction-visualization", prediction_visualization)
+
         def colors_and_voc():
             import numpy as np
             from PIL import Image, ImageDraw
