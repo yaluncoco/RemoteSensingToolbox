@@ -8,8 +8,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在[本项目 GitHub Release 的 Assets](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 中直接下载：
 
-- `RemoteSensingToolbox-1.3.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.3.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.3.1-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.3.1-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 每个正式版本都在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告，并将相同文件同步到公开发行仓库，供软件内更新使用。
@@ -44,13 +44,18 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 ## 本版改进
 
+- 修复预测分析格式选择区的滚轮误操作：滚动页面时，数据排列、着色方式、RGB 范围、分隔符和列号等参数保持不变，即使控件已获得焦点。
+- 格式通过点击或键盘选择，列号和表头行数通过输入或增减按钮修改，原有界面布局保持不变。
+
+保留此前的应用内更新和多格式可视化：
+
 - 更新窗口内直接下载 Windows 安装包，显示下载大小和进度，支持取消、失败重试及校验后的缓存复用。
 - 核对安装包名称、大小和 SHA-256，拒绝不完整或损坏文件；启动安装前再次校验。
 - 点击“安装并重启”后，安装程序等待旧进程退出，再升级并自动启动新版；运行中的处理任务和三维窗口会阻止安装。
 - 更新源迁移到独立的公开发行仓库 [RemoteSensingToolbox-Releases](https://github.com/yaluncoco/RemoteSensingToolbox-Releases)，客户端无需登录或配置访问令牌。
 - 保留 v1.2.0 的多格式点云可视化；[格式与操作示例](docs/POINT-CLOUD-VISUALIZATION.md)。
 
-从 v1.2.0 或更早版本升级，需要先运行一次 v1.3.0 安装包，此后可在软件内完成更新。便携版点击“安装并重启”会安装为当前用户版本，原便携目录保留。详见 [应用内更新说明](docs/IN-APP-UPDATES.md)。
+v1.3.0 用户可直接在软件内更新。从 v1.2.0 或更早版本升级，需要先运行一次当前版本的安装包，此后可在软件内完成更新。便携版点击“安装并重启”会安装为当前用户版本，原便携目录保留。详见 [应用内更新说明](docs/IN-APP-UPDATES.md)。
 
 此前版本的处理与稳定性改进：
 
@@ -92,7 +97,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 & "$env:LOCALAPPDATA\Programs\RemoteSensingToolbox\RemoteSensingToolbox.exe" --self-test --report "$env:TEMP\toolbox-self-test.json"
 ```
 
-本版更新与安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，此前的点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，此前的紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，此前的更新功能验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
+本版滚轮交互与打包验证见 [1.3.1 验证记录](docs/VALIDATION-1.3.1.md)，此前的更新安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，更新检测验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 
 自检包含 8 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 

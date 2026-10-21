@@ -1,14 +1,54 @@
 """Compact, explicit format controls for prediction visualization."""
-from PyQt5.QtCore import QTimer, pyqtSignal
-from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt, QEvent, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor, QWheelEvent
 from PyQt5.QtWidgets import (
     QWidget, QFormLayout, QHBoxLayout, QLabel, QComboBox, QSpinBox,
     QCheckBox, QPlainTextEdit, QPushButton, QColorDialog, QSizePolicy,
+    QApplication, QAbstractScrollArea,
 )
 
 from PointCloud.visualization_data import (
     POINT_LAYOUTS, VisualizationOptions, read_visualization_text, extract_visualization_data,
 )
+
+
+def _scroll_enclosing_page(widget, event):
+    # Qt 5 does not reliably bubble an ignored wheel event to the viewport.
+    # Preserve wheel/touchpad deltas and phases when forwarding it explicitly.
+    parent = widget.parentWidget()
+    while parent is not None:
+        if isinstance(parent, QAbstractScrollArea):
+            forwarded = QWheelEvent(event)
+            QApplication.sendEvent(parent.viewport(), forwarded)
+            event.setAccepted(forwarded.isAccepted())
+            return
+        parent = parent.parentWidget()
+    event.ignore()
+
+
+class _NoWheelComboBox(QComboBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        _scroll_enclosing_page(self, event)
+
+
+class _NoWheelSpinBox(QSpinBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.lineEdit().installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Wheel and watched is self.lineEdit():
+            _scroll_enclosing_page(self, event)
+            return True
+        return super().eventFilter(watched, event)
+
+    def wheelEvent(self, event):
+        _scroll_enclosing_page(self, event)
 
 
 class VisualizationFormatWidget(QWidget):
@@ -24,14 +64,14 @@ class VisualizationFormatWidget(QWidget):
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         form.setSpacing(8)
 
-        self.layout_combo = QComboBox()
+        self.layout_combo = _NoWheelComboBox()
         self.layout_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.layout_combo.setMinimumContentsLength(12)
         for key, layout in POINT_LAYOUTS.items():
             self.layout_combo.addItem(layout.title, key)
         self.layout_combo.setCurrentIndex(self.layout_combo.findData("xyz_rgb_label"))
         form.addRow("数据排列", self.layout_combo)
-        self.mode_combo = QComboBox()
+        self.mode_combo = _NoWheelComboBox()
         form.addRow("着色方式", self.mode_combo)
 
         self.custom_widget = QWidget()
@@ -56,7 +96,7 @@ class VisualizationFormatWidget(QWidget):
         self.rgb_options = QWidget()
         rgb_form = QFormLayout(self.rgb_options)
         rgb_form.setContentsMargins(0, 0, 0, 0)
-        self.range_combo = QComboBox()
+        self.range_combo = _NoWheelComboBox()
         for title, key in (("自动（按整份数据判断）", "auto"), ("0–255", "0-255"), ("0–1", "0-1")):
             self.range_combo.addItem(title, key)
         rgb_form.addRow("RGB 范围", self.range_combo)
@@ -78,12 +118,12 @@ class VisualizationFormatWidget(QWidget):
         detail_form = QFormLayout(self.details)
         detail_form.setContentsMargins(0, 0, 0, 0)
         detail_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        self.delimiter_combo = QComboBox()
+        self.delimiter_combo = _NoWheelComboBox()
         for title, key in (("自动（空白 / 逗号 / 分号）", "auto"), ("空格 / Tab", "whitespace"),
                            ("逗号 ,", "comma"), ("分号 ;", "semicolon"), ("Tab", "tab")):
             self.delimiter_combo.addItem(title, key)
         detail_form.addRow("分隔符", self.delimiter_combo)
-        self.skip_spin = QSpinBox()
+        self.skip_spin = _NoWheelSpinBox()
         self.skip_spin.setRange(0, 1000000)
         self.skip_spin.setSuffix(" 行")
         self.skip_spin.setToolTip("按文件物理行数跳过表头；空行和 # 注释会自动忽略。")
@@ -116,7 +156,7 @@ class VisualizationFormatWidget(QWidget):
 
     @staticmethod
     def _spin(value):
-        spin = QSpinBox()
+        spin = _NoWheelSpinBox()
         spin.setRange(1, 1000000)
         spin.setValue(value)
         spin.setMinimumWidth(64)

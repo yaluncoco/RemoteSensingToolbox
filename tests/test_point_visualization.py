@@ -11,9 +11,10 @@ from unittest.mock import Mock, patch
 import numpy as np
 from PIL import Image
 from PyQt5 import sip
-from PyQt5.QtCore import Qt, QEvent
+from PyQt5.QtCore import Qt, QEvent, QPoint, QPointF
+from PyQt5.QtGui import QWheelEvent
 from PyQt5.QtTest import QTest
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QSpinBox
 
 from Toolbox.tool_registry import configure_runtime_environment
 configure_runtime_environment()
@@ -202,6 +203,64 @@ class PointVisualizationUiTests(unittest.TestCase):
         self.assertTrue(self.panel.details.isHidden())
         self.panel.details_toggle.setChecked(True)
         self.assertFalse(self.panel.details.isHidden())
+
+    def test_wheel_scrolls_page_without_changing_format_even_after_focus(self):
+        self.window.resize(900, 600)
+        self.choose(self.panel.layout_combo, "custom")
+        self.panel.details_toggle.setChecked(True)
+        scroll = self.window.stacked_widget.currentWidget()
+        bar = scroll.verticalScrollBar()
+        for mode in ("label", "rgb"):
+            self.choose(self.panel.mode_combo, mode)
+            controls = [self.panel.layout_combo, self.panel.mode_combo,
+                        self.panel.delimiter_combo, self.panel.skip_spin, *self.panel.xyz_spins]
+            controls += ([self.panel.label_spin] if mode == "label" else
+                         [self.panel.range_combo, *self.panel.rgb_spins])
+            for control in controls:
+                for focused in (False, True):
+                    for delta in (120, -120):
+                        with self.subTest(mode=mode, control=control, focused=focused, delta=delta):
+                            (control if focused else self.panel.details_toggle).setFocus()
+                            scroll.ensureWidgetVisible(control)
+                            app.processEvents()
+                            self.assertEqual(control.hasFocus(), focused)
+                            before = self.panel.options()
+                            position = bar.value()
+                            target = control.lineEdit() if isinstance(control, QSpinBox) else control
+                            point = target.rect().center()
+                            global_point = target.mapToGlobal(point)
+                            event = QWheelEvent(QPointF(self.window.mapFromGlobal(global_point)), QPointF(global_point),
+                                                QPoint(), QPoint(0, delta), Qt.NoButton,
+                                                Qt.NoModifier, Qt.NoScrollPhase, False)
+                            app.sendEvent(self.window.windowHandle(), event)
+                            app.processEvents()
+                            self.assertEqual(self.panel.options(), before)
+                            if delta > 0 and position > bar.minimum():
+                                self.assertLess(bar.value(), position)
+                            elif delta < 0 and position < bar.maximum():
+                                self.assertGreater(bar.value(), position)
+
+    def test_format_can_still_be_selected_by_click_and_keyboard(self):
+        combo = self.panel.layout_combo
+        self.window.stacked_widget.currentWidget().ensureWidgetVisible(combo)
+        app.processEvents()
+        QTest.mouseClick(combo, Qt.LeftButton)
+        QTest.qWait(QApplication.doubleClickInterval() + 20)
+        view = combo.view()
+        index = combo.model().index(combo.findData("xyz_label"), 0)
+        view.scrollTo(index)
+        app.processEvents()
+        QTest.mouseClick(view.viewport(), Qt.LeftButton, pos=view.visualRect(index).center())
+        self.assertEqual(self.panel.options().layout, "xyz_label")
+        combo.setFocus()
+        QTest.keyClick(combo, Qt.Key_Down)
+        self.assertEqual(self.panel.options().layout, "xyz_rgb")
+        self.choose(combo, "custom")
+        self.panel.label_spin.setFocus()
+        self.panel.label_spin.selectAll()
+        QTest.keyClicks(self.panel.label_spin, "5")
+        QTest.keyClick(self.panel.label_spin, Qt.Key_Enter)
+        self.assertEqual(self.panel.options().label_column, 5)
 
     def test_merge_resets_read_options_and_label_mapping(self):
         with tempfile.TemporaryDirectory() as directory:
