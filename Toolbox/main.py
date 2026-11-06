@@ -523,6 +523,7 @@ def main() -> int:
     parser.add_argument("--report", type=Path, help="Self-test JSON report path")
     parser.add_argument("--screenshots", type=Path, help="Self-test screenshots directory")
     parser.add_argument("--check-renderer", action="store_true", help="Include native OpenGL rendering in the self-test")
+    parser.add_argument("--check-cloudcompare", type=Path, help="Also check this external CloudCompare executable during self-test")
     args = parser.parse_args()
 
     from Toolbox.tool_registry import configure_runtime_environment
@@ -545,7 +546,7 @@ def main() -> int:
     if args.self_test:
         from Toolbox.self_test import run_self_test
         report = args.report or log_dir / "self-test.json"
-        return run_self_test(app, report, args.screenshots, args.check_renderer)
+        return run_self_test(app, report, args.screenshots, args.check_renderer, args.check_cloudcompare)
 
     def handle_exception(exc_type, value, tb):
         logging.error("Unhandled exception", exc_info=(exc_type, value, tb))

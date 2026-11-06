@@ -30,6 +30,9 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 | SHP 标签转 TIF | 自定义类别 ID、批量配对、坐标对照、分块栅格化 |
 | VOC 数据集制作 | 图像/标签整理、可复现的训练验证划分、16 位整数标签 |
 | 点云处理工作台 | 预览、去噪、格式转换、ScanNet、NPY 查看、标签合并、四种下采样 |
+| 单木分割 | 配置 CloudCompare 路径，CSF 地面过滤、TreeIso 单木编号、完整标注和逐树 LAZ 导出 |
+
+单木分割为源码新增功能，需要本机另行安装带 CSF、TreeIso 插件的 CloudCompare；可在工具窗口保存程序路径。支持 LAS/LAZ 及单点云 BIN，按文件内容识别格式，扩展名误写为 `.laz` 的 BIN 会自动转换。使用方法与输出说明见 [单木分割流程](docs/TREE-SEGMENTATION.md)。上方 v1.3.1 下载包尚不包含该功能。
 
 ## 使用方法
 
@@ -99,7 +102,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 
 本版滚轮交互与打包验证见 [1.3.1 验证记录](docs/VALIDATION-1.3.1.md)，此前的更新安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，更新检测验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 
-自检包含 8 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
+源码自检包含 9 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC；可使用 `--check-cloudcompare 程序路径` 额外检测单木分割引擎。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 
 日志位于 `%LOCALAPPDATA%\RemoteSensingToolbox\logs\`。测试、打包中间文件、用户数据和旧发行文件不进入 Git 仓库；GitHub Releases 保存安装包和便携版。
 

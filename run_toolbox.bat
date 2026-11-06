@@ -1,3 +1,7 @@
 @echo off
 cd /d "%~dp0"
-python run_toolbox.py
+if exist ".venv\Scripts\python.exe" (
+    ".venv\Scripts\python.exe" run_toolbox.py
+) else (
+    python run_toolbox.py
+)

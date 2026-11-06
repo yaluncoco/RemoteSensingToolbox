@@ -16,6 +16,7 @@ datas = [
 ]
 binaries = []
 hiddenimports = [spec.module_name for spec in TOOLS] + ["workers", "visualization", "open3d.cpu.pybind", "backports.tarfile"]
+hiddenimports += collect_submodules("laspy") + collect_submodules("lazrs") + ["plyfile"]
 
 for package in ("rasterio", "fiona"):
     datas += collect_data_files(package, excludes=["**/tests/**", "**/__pycache__/**"])
@@ -24,7 +25,7 @@ for package in ("rasterio", "fiona"):
 
 datas += collect_data_files("open3d", excludes=["**/examples/**", "**/labextension/**", "**/nbextension/**", "**/__pycache__/**"])
 binaries += collect_dynamic_libs("open3d")
-for distribution in ("PyQt5", "numpy", "Pillow", "rasterio", "fiona", "scipy", "scikit-learn", "matplotlib", "open3d"):
+for distribution in ("PyQt5", "numpy", "Pillow", "rasterio", "fiona", "scipy", "scikit-learn", "matplotlib", "open3d", "laspy", "lazrs", "plyfile"):
     datas += copy_metadata(distribution)
 
 # Conda's Python may place standard-library/VC dependencies outside its DLLs directory.

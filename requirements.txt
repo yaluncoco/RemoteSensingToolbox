@@ -8,3 +8,6 @@ scikit-learn==1.7.2
 matplotlib==3.10.9
 open3d==0.19.0
 tqdm==4.67.1
+laspy==2.7.0
+lazrs==0.8.2
+plyfile==1.1.5

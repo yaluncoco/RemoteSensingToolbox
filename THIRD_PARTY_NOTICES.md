@@ -19,5 +19,10 @@
 - Matplotlib：https://github.com/matplotlib/matplotlib
 - Open3D：https://github.com/isl-org/Open3D
 - Inno Setup：https://github.com/jrsoftware/issrc
+- laspy：https://github.com/laspy/laspy
+- lazrs：https://github.com/tmontaigu/laz-rs
+- plyfile：https://github.com/dranjan/python-plyfile
+
+单木分割可调用用户另行安装的 CloudCompare（https://github.com/CloudCompare/CloudCompare）及 CSF / TreeIso 插件（https://github.com/truebelief/cc-treeiso-plugin）。本项目不打包这些外部程序或复制其算法源码。流程封装迁移自本用户的本地 CloudCompare MCP 工作区。
 
 安装程序使用 Inno Setup 编译。中文安装界面翻译来自 Inno Setup 官方仓库中的社区翻译文件，原始署名保留在 `installer/languages/ChineseSimplified.isl` 中。

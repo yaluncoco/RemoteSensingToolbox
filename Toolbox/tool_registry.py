@@ -117,6 +117,17 @@ TOOLS: tuple[ToolSpec, ...] = (
         icon_name="SP_ComputerIcon",
         tags=("点云", "Open3D", "去噪", "转换"),
     ),
+    ToolSpec(
+        id="tree-segmentation",
+        title="单木分割",
+        category="点云处理",
+        summary="调用 CloudCompare 分离地面、逐树编号并导出单木点云。",
+        module_name="PointCloud.forestry_gui",
+        class_name="ForestryWindow",
+        project_dir=POINT_CLOUD_PROJECT_DIR,
+        icon_name="SP_DirIcon",
+        tags=("树木", "分割", "林地", "TreeIso", "CSF", "CloudCompare", "LAS", "LAZ"),
+    ),
 )
 
 

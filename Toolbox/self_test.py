@@ -17,7 +17,8 @@ from PyQt5.QtWidgets import QMessageBox
 from Toolbox.version import APP_VERSION
 
 
-def run_self_test(app, report_path: Path, screenshots: Path | None = None, check_renderer=False) -> int:
+def run_self_test(app, report_path: Path, screenshots: Path | None = None, check_renderer=False,
+                  cloudcompare_path: Path | None = None) -> int:
     from Toolbox.main import ToolboxWindow
     from Toolbox.tool_registry import TOOLS
 
@@ -248,6 +249,63 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
             return "Three RGB colors; VOC split with 16-bit labels"
         check("colors-and-voc", colors_and_voc)
 
+    def forestry_file_runtime():
+        import laspy
+        import numpy as np
+        from PointCloud.forestry import write_ply
+        from PointCloud.forestry_io import read_cloud
+        from PointCloud.cloudcompare import external_environment
+        with tempfile.TemporaryDirectory(prefix="toolbox-forest-io-") as directory:
+            path = Path(directory) / "单木 测试.laz"
+            cloud = laspy.LasData(laspy.LasHeader(point_format=3, version="1.2"))
+            cloud.x, cloud.y, cloud.z = [1., 2.], [3., 4.], [5., 6.]
+            cloud.write(path)
+            restored = laspy.read(path)
+            if restored.points.array.tobytes() != cloud.points.array.tobytes():
+                raise AssertionError("LAZ round trip failed")
+            xyz = np.column_stack((cloud.x, cloud.y, cloud.z))
+            write_ply(path.with_suffix(".ply"), xyz)
+            if not np.array_equal(read_cloud(path.with_suffix(".ply")).xyz, xyz):
+                raise AssertionError("PLY round trip failed")
+            if "QT_PLUGIN_PATH" in external_environment():
+                raise AssertionError("Toolbox Qt plugin path leaked to external engine")
+        return "laspy/lazrs/plyfile imported; Unicode LAZ/PLY read/write; external Qt isolation"
+    check("forestry-file-runtime", forestry_file_runtime)
+
+    if cloudcompare_path:
+        def installed_cloudcompare():
+            from PointCloud.cloudcompare import probe
+            result = probe(str(cloudcompare_path))
+            if not result["available"]:
+                raise RuntimeError("Missing CloudCompare commands: " + ", ".join(result["missing"]))
+            return {"binary": result["binary"], "plugins": ["CSF", "TREEISO"]}
+        check("forestry-external-engine", installed_cloudcompare)
+
+        def misnamed_bin_input():
+            import laspy
+            import numpy as np
+            from PointCloud.cloudcompare import execution, run
+            from PointCloud.forestry import write_ply
+            from PointCloud.forestry_input import identify_input, normalize_input
+            from PointCloud.forestry_io import fingerprint
+            with tempfile.TemporaryDirectory(prefix="toolbox-bin-") as directory:
+                root = Path(directory) / "中文 空格"
+                root.mkdir()
+                xyz = np.array([(x*.1, y*.1, x*.2) for x in range(10) for y in range(10)])
+                write_ply(root / "input.ply", xyz, {"Intensity": np.arange(100, dtype="f4")})
+                with execution(str(cloudcompare_path)):
+                    run(["-C_EXPORT_FMT", "BIN", "-O", str(root / "input.ply"),
+                         "-SAVE_CLOUDS", "FILE", "../misnamed.laz"], root / "make-bin")
+                    source = root / "misnamed.laz"
+                    before = fingerprint(source)
+                    output, details = normalize_input(source, root, identify_input(source))
+                    if fingerprint(source) != before or laspy.read(output).header.point_count != 100:
+                        raise AssertionError("BIN input preservation failed")
+                    if not all(details["verification"].values()):
+                        raise AssertionError("BIN conversion verification failed")
+            return "Real BIN disguised as .laz; content detection, conversion and every exported property verified"
+        check("forestry-misnamed-bin-input", misnamed_bin_input)
+
     if check_renderer:
         def render_point_cloud():
             import numpy as np
@@ -268,7 +326,7 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
         check("native-3d-renderer", render_point_cloud)
 
     versions = {}
-    for name in ("PyQt5", "numpy", "Pillow", "rasterio", "fiona", "scipy", "scikit-learn", "matplotlib", "open3d"):
+    for name in ("PyQt5", "numpy", "Pillow", "rasterio", "fiona", "scipy", "scikit-learn", "matplotlib", "open3d", "laspy", "lazrs", "plyfile"):
         try:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
