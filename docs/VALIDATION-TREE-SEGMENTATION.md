@@ -2,6 +2,8 @@
 
 日期：2026-11-06。Windows x64，独立 Python 3.12.7 环境，本机 CloudCompare `D:\apps\CloudCompare\CloudCompare.exe`。
 
+单木分割随 v1.4.0 正式安装包和便携版提供；发行文件与安装验证见 [1.4.0 验证记录](VALIDATION-1.4.0.md)。以下预览构建记录保留用于追溯开发过程。
+
 ## CCB2 文件识别修复
 
 - 用户实际输入为 `.laz` 扩展名、`CCB2` 文件头的 CloudCompare BIN。之前直接交给 laspy，导致 `Invalid file signature`。
@@ -63,4 +65,4 @@ $env:TOOLBOX_TEST_CLOUDCOMPARE = 'D:\apps\CloudCompare\CloudCompare.exe'
 .\.venv\Scripts\python.exe run_toolbox.py --self-test --check-cloudcompare $env:TOOLBOX_TEST_CLOUDCOMPARE --report .build\forestry-self-test.json
 ```
 
-不设置 `TOOLBOX_TEST_CLOUDCOMPARE` 时，真实引擎测试跳过，其他回归测试仍运行。源码新增功能未发布到 GitHub，既有 v1.3.1 安装包不受本次修改影响。
+不设置 `TOOLBOX_TEST_CLOUDCOMPARE` 时，真实引擎测试跳过，其他回归测试仍运行。单木分割需要 v1.4.0 或更新版本；v1.3.1 安装包不包含该功能。

@@ -4,7 +4,7 @@
 
 本地源码启动：双击仓库根目录 `run_toolbox.bat`，优先使用 `.venv` 独立环境。测试记录见 [验证说明](VALIDATION-TREE-SEGMENTATION.md)。
 
-修复 BIN 格式识别后的本地预览版位于 `.build/forestry-bin-fix/RemoteSensingToolbox/RemoteSensingToolbox.exe`，运行时需保留同目录的 `_internal` 文件夹。该预览版尚未发布为正式安装包。
+v1.4.0 起，正式安装包和便携版均包含该功能及 BIN 格式识别修复。便携版需完整解压，运行时保留同目录的 `_internal` 文件夹。早期 `.build/forestry-bin-fix/` 仅为本地预览构建。
 
 ## 使用
 

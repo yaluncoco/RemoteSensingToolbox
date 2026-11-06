@@ -8,8 +8,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在[本项目 GitHub Release 的 Assets](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 中直接下载：
 
-- `RemoteSensingToolbox-1.3.1-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.3.1-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.4.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.4.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 每个正式版本都在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告，并将相同文件同步到公开发行仓库，供软件内更新使用。
@@ -32,7 +32,7 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 | 点云处理工作台 | 预览、去噪、格式转换、ScanNet、NPY 查看、标签合并、四种下采样 |
 | 单木分割 | 配置 CloudCompare 路径，CSF 地面过滤、TreeIso 单木编号、完整标注和逐树 LAZ 导出 |
 
-单木分割为源码新增功能，需要本机另行安装带 CSF、TreeIso 插件的 CloudCompare；可在工具窗口保存程序路径。支持 LAS/LAZ 及单点云 BIN，按文件内容识别格式，扩展名误写为 `.laz` 的 BIN 会自动转换。使用方法与输出说明见 [单木分割流程](docs/TREE-SEGMENTATION.md)。上方 v1.3.1 下载包尚不包含该功能。
+v1.4.0 安装包和便携版已包含单木分割流程，需要本机另行安装带 CSF、TreeIso 插件的 CloudCompare；可在工具窗口保存程序路径。支持 LAS/LAZ 及单点云 BIN，按文件内容识别格式，扩展名误写为 `.laz` 的 BIN 会自动转换。使用方法与输出说明见 [单木分割流程](docs/TREE-SEGMENTATION.md)。
 
 ## 使用方法
 
@@ -46,6 +46,12 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 操作说明统一放在本仓库：[快速开始](Toolbox/quick_start.md) 介绍各工具的操作流程和输出特点，[完整使用手册](遥感点云工具箱_使用与维护手册.md) 提供详细参数。
 
 ## 本版改进
+
+- 新增单木分割工具：保存 CloudCompare 路径，后台执行 CSF 地面过滤与 TreeIso 分割，生成完整标注点云、逐树 LAZ、编号清单和预览图。
+- 按文件头识别 LAS/LAZ/BIN，自动转换扩展名误写为 `.laz` 的 CloudCompare BIN，并校验导出的数值属性、点序和逐树文件。
+- 四份真实人工林数据共 56,924,569 点完成测试，生成 1,403 个待人工复核的单木候选；结果未跨文件去重，详细记录见 [单木分割验证](docs/VALIDATION-TREE-SEGMENTATION.md)。
+
+保留 v1.3.1 的滚轮交互修复：
 
 - 修复预测分析格式选择区的滚轮误操作：滚动页面时，数据排列、着色方式、RGB 范围、分隔符和列号等参数保持不变，即使控件已获得焦点。
 - 格式通过点击或键盘选择，列号和表头行数通过输入或增减按钮修改，原有界面布局保持不变。
@@ -100,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 & "$env:LOCALAPPDATA\Programs\RemoteSensingToolbox\RemoteSensingToolbox.exe" --self-test --report "$env:TEMP\toolbox-self-test.json"
 ```
 
-本版滚轮交互与打包验证见 [1.3.1 验证记录](docs/VALIDATION-1.3.1.md)，此前的更新安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，更新检测验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
+本版分割与打包验证见 [1.4.0 验证记录](docs/VALIDATION-1.4.0.md)，此前的滚轮交互验证见 [1.3.1 验证记录](docs/VALIDATION-1.3.1.md)，更新安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，更新检测验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 
 源码自检包含 9 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC；可使用 `--check-cloudcompare 程序路径` 额外检测单木分割引擎。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 
