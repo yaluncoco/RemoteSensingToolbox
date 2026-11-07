@@ -8,8 +8,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在[本项目 GitHub Release 的 Assets](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 中直接下载：
 
-- `RemoteSensingToolbox-1.4.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.4.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.4.1-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.4.1-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 每个正式版本都在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告，并将相同文件同步到公开发行仓库，供软件内更新使用。
@@ -32,7 +32,7 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 | 点云处理工作台 | 预览、去噪、格式转换、ScanNet、NPY 查看、标签合并、四种下采样 |
 | 单木分割 | 配置 CloudCompare 路径，CSF 地面过滤、TreeIso 单木编号、完整标注和逐树 LAZ 导出 |
 
-v1.4.0 安装包和便携版已包含单木分割流程，需要本机另行安装带 CSF、TreeIso 插件的 CloudCompare；可在工具窗口保存程序路径。支持 LAS/LAZ 及单点云 BIN，按文件内容识别格式，扩展名误写为 `.laz` 的 BIN 会自动转换。使用方法与输出说明见 [单木分割流程](docs/TREE-SEGMENTATION.md)。
+v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安装后的程序完成真实数据分割和逐树导出验证。单木分割需要本机另行安装带 CSF、TreeIso 插件的 CloudCompare；可在工具窗口保存程序路径。支持 LAS/LAZ 及单点云 BIN，按文件内容识别格式，扩展名误写为 `.laz` 的 BIN 会自动转换。使用方法与输出说明见 [单木分割流程](docs/TREE-SEGMENTATION.md)。
 
 ## 使用方法
 
@@ -112,7 +112,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 
 本版安装版完整流程验证见 [1.4.1 验证记录](docs/VALIDATION-1.4.1.md)，前版验证缺口见 [1.4.0 更正记录](docs/VALIDATION-1.4.0.md)，此前的滚轮交互验证见 [1.3.1 验证记录](docs/VALIDATION-1.3.1.md)，更新安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，更新检测验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 
-源码自检包含 9 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC；可使用 `--check-cloudcompare 程序路径` 额外检测单木分割引擎。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
+自检包含 9 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片、VOC，以及单木 PNG / SVG 绘图和标注导出；可使用 `--check-cloudcompare 程序路径` 额外运行单木分割完整窗口流程。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 
 日志位于 `%LOCALAPPDATA%\RemoteSensingToolbox\logs\`。测试、打包中间文件、用户数据和旧发行文件不进入 Git 仓库；GitHub Releases 保存安装包和便携版。
 
