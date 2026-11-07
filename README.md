@@ -110,7 +110,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 
 验证安装版的真实数据完整流程，可加 `--check-cloudcompare "CloudCompare.exe 的完整路径" --forestry-test-input "数据文件路径" --forestry-test-output "已有输出文件夹"`。程序会通过实际分割窗口和后台线程运行，结果保留在新任务目录；报告含图像解码、点属性与逐树读回校验。未指定真实数据时，`--check-cloudcompare` 使用六棵树的合成点云测试。
 
-本版分割与打包验证见 [1.4.0 验证记录](docs/VALIDATION-1.4.0.md)，此前的滚轮交互验证见 [1.3.1 验证记录](docs/VALIDATION-1.3.1.md)，更新安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，更新检测验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
+本版安装版完整流程验证见 [1.4.1 验证记录](docs/VALIDATION-1.4.1.md)，前版验证缺口见 [1.4.0 更正记录](docs/VALIDATION-1.4.0.md)，此前的滚轮交互验证见 [1.3.1 验证记录](docs/VALIDATION-1.3.1.md)，更新安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，更新检测验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 
 源码自检包含 9 个工具窗口、TIFF/PNG/JPG 转换、SHP/GPKG 栅格化、中文路径点云读写、标签切片和 VOC；可使用 `--check-cloudcompare 程序路径` 额外检测单木分割引擎。三维实时预览还取决于本机显卡驱动和 OpenGL 支持。
 
