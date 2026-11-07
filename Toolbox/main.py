@@ -524,7 +524,12 @@ def main() -> int:
     parser.add_argument("--screenshots", type=Path, help="Self-test screenshots directory")
     parser.add_argument("--check-renderer", action="store_true", help="Include native OpenGL rendering in the self-test")
     parser.add_argument("--check-cloudcompare", type=Path, help="Also check this external CloudCompare executable during self-test")
+    parser.add_argument("--forestry-test-input", type=Path, help="Also run the forestry GUI workflow on this real file during self-test")
+    parser.add_argument("--forestry-test-output", type=Path, help="Existing directory in which to retain the real-data self-test outputs")
     args = parser.parse_args()
+    if args.forestry_test_input or args.forestry_test_output:
+        if not (args.self_test and args.check_cloudcompare and args.forestry_test_input and args.forestry_test_output):
+            parser.error("Real-data forestry checks require --self-test, --check-cloudcompare, --forestry-test-input and --forestry-test-output")
 
     from Toolbox.tool_registry import configure_runtime_environment
     configure_runtime_environment()
@@ -546,7 +551,8 @@ def main() -> int:
     if args.self_test:
         from Toolbox.self_test import run_self_test
         report = args.report or log_dir / "self-test.json"
-        return run_self_test(app, report, args.screenshots, args.check_renderer, args.check_cloudcompare)
+        return run_self_test(app, report, args.screenshots, args.check_renderer, args.check_cloudcompare,
+                             args.forestry_test_input, args.forestry_test_output)
 
     def handle_exception(exc_type, value, tb):
         logging.error("Unhandled exception", exc_info=(exc_type, value, tb))

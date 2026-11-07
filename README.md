@@ -100,11 +100,15 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -Python .\.ve
 
 完整打包需要 [Inno Setup 6.5+](https://jrsoftware.org/isinfo.php)。可用 `-Iscc` 指定编译器路径，或用 `-SkipInstaller` 仅生成便携版。构建脚本会运行回归测试、收集许可证、打包程序、验证发行版、编译安装包并生成校验文件。输出位于 `release/`。
 
+每次构建必须通过实际 PNG / SVG 绘图和完整标注、逐树 LAZ 导出的发行版自检。单木分割发布前还需传入 `-CloudCompare "D:\apps\CloudCompare\CloudCompare.exe"`，让冻结后的程序通过真实单木分割窗口运行 CSF → TreeIso → 绘图 → 逐树导出流程；缺失组件或流程失败会阻止打包继续。
+
 安装后的程序也支持自检：
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\RemoteSensingToolbox\RemoteSensingToolbox.exe" --self-test --report "$env:TEMP\toolbox-self-test.json"
 ```
+
+验证安装版的真实数据完整流程，可加 `--check-cloudcompare "CloudCompare.exe 的完整路径" --forestry-test-input "数据文件路径" --forestry-test-output "已有输出文件夹"`。程序会通过实际分割窗口和后台线程运行，结果保留在新任务目录；报告含图像解码、点属性与逐树读回校验。未指定真实数据时，`--check-cloudcompare` 使用六棵树的合成点云测试。
 
 本版分割与打包验证见 [1.4.0 验证记录](docs/VALIDATION-1.4.0.md)，此前的滚轮交互验证见 [1.3.1 验证记录](docs/VALIDATION-1.3.1.md)，更新安装验证见 [1.3.0 验证记录](docs/VALIDATION-1.3.0.md)，点云验证见 [1.2.0 验证记录](docs/VALIDATION-1.2.0.md)，紧凑界面验证见 [1.1.1 验证记录](docs/VALIDATION-1.1.1.md)，更新检测验证见 [1.1.0 验证记录](docs/VALIDATION-1.1.0.md)，历史性能对比见 [1.0.0 验证记录](docs/VALIDATION.md)。
 

@@ -15,6 +15,8 @@ from Toolbox.version import APP_ID
 
 
 STAGES = {
+    "checking_output_runtime": "正在检查 PNG / SVG 绘图组件…",
+    "rendering_results": "正在生成编号总览图和单木示例图…",
     "reading_bin": "检测到 CloudCompare BIN 内容，正在读取工作副本…",
     "converting_bin": "正在转换 BIN，保留坐标与属性…",
     "validating_bin": "正在逐点校验 BIN 转换结果…",

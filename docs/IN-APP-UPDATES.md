@@ -29,6 +29,7 @@
 软件内更新源：[yaluncoco/RemoteSensingToolbox-Releases](https://github.com/yaluncoco/RemoteSensingToolbox-Releases)，该仓库仅存放发行文件。[原项目仓库](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest)的每个正式 Release 也必须在 Assets 中提供同一套文件，方便用户直接下载。
 
 1. 更新 `Toolbox/version.py` 的 `APP_VERSION` 和安装器默认版本，完成测试与打包。
+   单木分割版本须使用 `build_windows.ps1 -CloudCompare "CloudCompare.exe 的完整路径"`，确认冻结程序的 `forestry-plots-and-export` 和 `forestry-gui-complete-workflow` 均通过。再用实际安装后的 EXE 加 `--forestry-test-input` / `--forestry-test-output` 验证真实数据，检查图像解码、逐点属性及逐树读回。源码环境成功、窗口能打开或插件检测成功，都不能替代安装版完整流程验证。
 2. 在原项目仓库和发行仓库创建同一数字版本的 Release，例如 `v1.3.0`，先作为草稿上传完整资产。
 3. 两个仓库的 Assets 均需上传安装包、便携 ZIP、`SHA256SUMS.txt` 和验证报告。安装包必须使用 `RemoteSensingToolbox-1.3.0-windows-x64-setup.exe` 这样的准确名称；原项目 Release 不能只提供外部链接或 GitHub 自动生成的源码压缩包。
 4. 确认两个仓库的资产状态为 `uploaded`，大小正确，API 返回 `sha256:...` digest，且均与同一套本地文件一致，再公开发布并设为 Latest。

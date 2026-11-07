@@ -18,6 +18,8 @@ def run_workflow(source, output_parent, binary, *, coordinates_in_metres=False,
     parent = Path(output_parent).expanduser().resolve(strict=True)
     if not parent.is_dir():
         raise ValueError("请选择输出文件夹。")
+    notify({"stage": "checking_output_runtime"})
+    forestry.check_output_runtime()
     notify({"stage": "checking_plugins"})
     capability = cloudcompare.probe(binary, cancelled)
     if not capability["available"]:

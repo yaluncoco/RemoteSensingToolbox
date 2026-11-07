@@ -43,7 +43,8 @@ analysis = Analysis(
     [str(root / "run_toolbox.py")],
     pathex=[str(root), str(root / "imageprocession"), str(root / "PointCloud")],
     binaries=binaries, datas=datas, hiddenimports=hiddenimports,
-    hookspath=[], hooksconfig={"matplotlib": {"backends": ["Qt5Agg", "Agg"]}},
+    # savefig selects file-format backends dynamically, even on an Agg canvas.
+    hookspath=[], hooksconfig={"matplotlib": {"backends": ["Qt5Agg", "Agg", "SVG"]}},
     runtime_hooks=[],
     excludes=["torch", "tensorflow", "tensorboard", "open3d.ml.torch", "open3d.ml.tf",
               "IPython", "ipykernel", "ipywidgets", "jupyterlab", "notebook"],

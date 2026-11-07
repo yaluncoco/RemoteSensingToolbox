@@ -1,6 +1,7 @@
 ﻿param(
     [string]$Python = "python",
     [string]$Iscc = "",
+    [string]$CloudCompare = "",
     [switch]$SkipTests,
     [switch]$SkipInstaller
 )
@@ -27,6 +28,10 @@ try {
     $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
     $ProcessInfo.FileName = $AppExe
     $ProcessInfo.Arguments = "--self-test --report `"$Report`""
+    if ($CloudCompare) {
+        $CloudCompare = (Resolve-Path -LiteralPath $CloudCompare).Path
+        $ProcessInfo.Arguments += " --check-cloudcompare `"$CloudCompare`""
+    }
     $ProcessInfo.WorkingDirectory = Join-Path $RepoRoot ".build"
     $ProcessInfo.UseShellExecute = $false
     $ProcessInfo.EnvironmentVariables["PATH"] = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
@@ -37,7 +42,8 @@ try {
     $Process = New-Object System.Diagnostics.Process
     $Process.StartInfo = $ProcessInfo
     if (-not $Process.Start()) { throw "Could not start the frozen application self-test." }
-    if (-not $Process.WaitForExit(180000)) {
+    $Timeout = if ($CloudCompare) { 600000 } else { 180000 }
+    if (-not $Process.WaitForExit($Timeout)) {
         $Process.Kill()
         throw "The frozen application self-test timed out."
     }
@@ -45,6 +51,11 @@ try {
     if ($Process.ExitCode -ne 0 -or -not (Test-Path $Report)) { throw "The frozen application self-test failed." }
     $Result = Get-Content $Report -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $Result.ok -or -not $Result.frozen) { throw "Frozen self-test did not pass." }
+    foreach ($Name in @("forestry-plots-and-export") + $(if ($CloudCompare) { "forestry-gui-complete-workflow" })) {
+        if (-not ($Result.checks | Where-Object { $_.name -eq $Name -and $_.ok })) {
+            throw "Required frozen forestry check did not pass: $Name"
+        }
+    }
 
     Copy-Item THIRD_PARTY_NOTICES.md $AppDir
     $ReleaseDir = Join-Path $RepoRoot "release"

@@ -13,43 +13,7 @@ from PointCloud import cloudcompare, forestry
 from PointCloud.forestry_workflow import run_workflow
 
 
-def prepared_forest(root, zero_offsets=False):
-    ground = np.array([[x, y, 0.] for x in np.arange(.01, 10, .4) for y in np.arange(.01, 2, .4)])
-    trees = np.array([[base + x, y, z] for base in (1., 7.) for x in (.01, .25, .49)
-                      for y in (.01, .25, .49) for z in np.arange(.41, 4.5, .21)])
-    representative = np.concatenate((ground, trees))
-    xyz = np.repeat(representative, 3, axis=0)
-    xyz[:, 0] += np.tile([0., .002, .004], len(representative))
-    header = laspy.LasHeader(point_format=3, version="1.2")
-    header.scales = [.001] * 3
-    header.offsets = [434917.6331222008, 4460951.865954002, 92.4817]
-    cloud = laspy.LasData(header)
-    cloud.x, cloud.y, cloud.z = (xyz + header.offsets).T
-    cloud.intensity = np.arange(len(xyz), dtype="u2")
-    cloud.classification = np.full(len(xyz), 7, dtype="u1")
-    cloud.synthetic = np.ones(len(xyz), dtype="u1")
-    cloud.withheld = (np.arange(len(xyz)) % 2).astype("u1")
-    cloud.gps_time = np.arange(len(xyz), dtype=float) + 123.25
-    cloud.red, cloud.green, cloud.blue = [np.full(len(xyz), v, dtype="u2") for v in (100, 200, 300)]
-    if zero_offsets:
-        cloud.change_scaling(scales=[.01]*3, offsets=[0.]*3)
-    from laspy.vlrs.known import WktCoordinateSystemVlr
-    # Deliberately preserve, rather than parse or reinterpret, a supplied CRS record.
-    cloud.header.vlrs.append(WktCoordinateSystemVlr('LOCAL_CS["metre survey",UNIT["metre",1]]'))
-    source = root / "林地 原始点云.laz"
-    cloud.write(source)
-    output = root / "单木 结果"
-    meta = forestry.prepare(source, output, .2)
-    with np.load(output / "sample.npz") as archive:
-        sample = archive["xyz"]
-    mask = sample[:, 2] > .3
-    vegetation = sample[mask]
-    np.savez_compressed(output / "vegetation.npz", xyz=vegetation, height=vegetation[:, 2],
-                        sample_index=np.flatnonzero(mask).astype("u4"))
-    forestry.write_ply(output / "sample_local_ground_points.ply", sample[~mask])
-    forestry.write_ply(output / "treeiso_local.ply", vegetation[::-1],
-                       {"scalar_final_segs": np.where(vegetation[::-1, 0] < 5, 7, 19).astype("f4")})
-    return source, output, meta
+from Toolbox.forestry_self_test import prepared_forest
 
 
 class ForestryTests(unittest.TestCase):
@@ -117,6 +81,48 @@ class ForestryTests(unittest.TestCase):
         self.assertEqual(result["extracted_trees"], 0)
         self.assertFalse((root / "trees").exists())
         self.assertTrue(Path(result["full_cloud"]).is_file())
+
+    def test_render_failure_does_not_publish_segmentation_manifest(self):
+        _, root, meta = prepared_forest(self.root)
+        with patch.object(forestry, "render_results", side_effect=ModuleNotFoundError("backend_svg")):
+            with self.assertRaisesRegex(ModuleNotFoundError, "backend_svg"):
+                forestry.analyze(root, meta, 20, 2.)
+        self.assertFalse((root / "segmentation.json").exists())
+        self.assertFalse((root / "export.json").exists())
+
+    def test_reuse_repairs_legacy_missing_plots_without_rerunning_engine(self):
+        from Toolbox.forestry_self_test import verify_plots
+        source, root, meta = prepared_forest(self.root)
+        summary = forestry.analyze(root, meta, 20, 2.)
+        labels = (root / "sample_labels.npz").read_bytes()
+        (root / "instance_map.svg").unlink()
+        (root / "tree_gallery.png").write_bytes(b"")
+        with patch.object(forestry, "_ground_and_vegetation") as ground, patch.object(forestry, "_treeiso") as treeiso:
+            restored = forestry.segment(source, root, True, min_sample_points=20, reuse_existing=True)
+            ground.assert_not_called()
+            treeiso.assert_not_called()
+        self.assertEqual(restored, summary)
+        self.assertEqual((root / "sample_labels.npz").read_bytes(), labels)
+        verify_plots(root)
+
+    def test_failed_legacy_plot_repair_removes_incomplete_manifest(self):
+        source, root, meta = prepared_forest(self.root)
+        forestry.analyze(root, meta, 20, 2.)
+        (root / "instance_map.svg").unlink()
+        with patch.object(forestry, "render_results", side_effect=RuntimeError("render failed")):
+            with self.assertRaisesRegex(RuntimeError, "render failed"):
+                forestry.segment(source, root, True, min_sample_points=20, reuse_existing=True)
+        self.assertFalse((root / "segmentation.json").exists())
+
+    def test_missing_output_runtime_fails_before_engine_or_output_creation(self):
+        source = self.root / "input.las"
+        source.write_bytes(b"LASF")
+        with patch.object(forestry, "check_output_runtime", side_effect=RuntimeError("backend_svg")), \
+                patch.object(cloudcompare, "probe") as probe:
+            with self.assertRaisesRegex(RuntimeError, "backend_svg"):
+                run_workflow(source, self.root, "unused.exe", coordinates_in_metres=True)
+            probe.assert_not_called()
+        self.assertEqual(list(self.root.glob("forest_*")), [])
 
     def test_invalid_configured_path_does_not_fallback(self):
         with patch.dict(os.environ, {"CLOUDCOMPARE_PATH": str(self.root / "missing.exe")}):

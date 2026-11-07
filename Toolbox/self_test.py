@@ -18,7 +18,8 @@ from Toolbox.version import APP_VERSION
 
 
 def run_self_test(app, report_path: Path, screenshots: Path | None = None, check_renderer=False,
-                  cloudcompare_path: Path | None = None) -> int:
+                  cloudcompare_path: Path | None = None, forestry_input: Path | None = None,
+                  forestry_output: Path | None = None) -> int:
     from Toolbox.main import ToolboxWindow
     from Toolbox.tool_registry import TOOLS
 
@@ -272,6 +273,9 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
         return "laspy/lazrs/plyfile imported; Unicode LAZ/PLY read/write; external Qt isolation"
     check("forestry-file-runtime", forestry_file_runtime)
 
+    from Toolbox.forestry_self_test import check_postprocessing, check_gui_workflow
+    check("forestry-plots-and-export", check_postprocessing)
+
     if cloudcompare_path:
         def installed_cloudcompare():
             from PointCloud.cloudcompare import probe
@@ -305,6 +309,12 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
                         raise AssertionError("BIN conversion verification failed")
             return "Real BIN disguised as .laz; content detection, conversion and every exported property verified"
         check("forestry-misnamed-bin-input", misnamed_bin_input)
+
+        check("forestry-gui-complete-workflow", lambda: check_gui_workflow(app, cloudcompare_path))
+        if forestry_input:
+            check("forestry-gui-real-data", lambda: check_gui_workflow(
+                app, cloudcompare_path, forestry_input, forestry_output,
+                screenshots / "forestry-complete.png" if screenshots else None))
 
     if check_renderer:
         def render_point_cloud():

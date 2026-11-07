@@ -278,9 +278,10 @@ def analyze(root, metadata, min_sample_points=100, min_height=2.0):
                                "Height is estimated against CSF ground in source units assumed to be metres; no CRS is invented"],
                "outputs": {"inventory": str(root / "tree_inventory.csv"), "overview": str(root / "instance_overview.png"),
                            "map": str(root / "instance_map.svg"), "gallery": str(root / "tree_gallery.png")}}
-    save_json(root / "segmentation.json", summary)
     cli.check_cancel()
+    progress(root, "rendering_results")
     render_results(root, sample["xyz"], instance, rows)
+    save_json(root / "segmentation.json", summary)
     return summary
 
 
@@ -295,6 +296,26 @@ def palette(count):
     colors = np.random.default_rng(20261106).uniform(.12, .9, (count + 1, 3))
     colors[0] = [.67, .67, .67]
     return colors
+
+
+def check_output_runtime():
+    """Exercise both output backends before starting an expensive engine job."""
+    from io import BytesIO
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    fig = Figure(figsize=(1, 1))
+    FigureCanvasAgg(fig)
+    try:
+        fig.subplots().plot([0, 1], [0, 1])
+        for fmt in ("png", "svg"):
+            with BytesIO() as output:
+                fig.savefig(output, format=fmt)
+                if not output.tell():
+                    raise RuntimeError(f"Empty {fmt} output")
+    except Exception as exc:
+        raise RuntimeError("绘图组件检查失败，请安装修复版本后重试：" + str(exc)) from exc
+    finally:
+        fig.clear()
 
 
 def render_results(root, xyz, ids, rows):
@@ -370,7 +391,18 @@ def segment(source_path, output_directory, coordinates_in_metres, resolution=.2,
             meta = prepare(source, root, resolution)
         save_json(root / "parameters.json", params)
         if (root / "segmentation.json").exists():
-            return json.loads((root / "segmentation.json").read_text(encoding="utf-8"))
+            summary = json.loads((root / "segmentation.json").read_text(encoding="utf-8"))
+            # v1.4.0 wrote its manifest before rendering. Repair incomplete
+            # cached outputs without rerunning TreeIso or changing tree IDs.
+            plots = ("instance_overview.png", "instance_map.svg", "tree_gallery.png")
+            if any(not (root / name).is_file() or not (root / name).stat().st_size for name in plots):
+                (root / "segmentation.json").unlink()
+                progress(root, "rendering_results")
+                with np.load(root / "sample.npz") as sample, np.load(root / "sample_labels.npz") as labels:
+                    rows = json.loads((root / "tree_inventory.json").read_text(encoding="utf-8"))
+                    render_results(root, sample["xyz"], labels["instance_id"], rows)
+                save_json(root / "segmentation.json", summary)
+            return summary
         _ground_and_vegetation(root, params)
         _treeiso(root, resolution)
         progress(root, "numbering_candidates")
