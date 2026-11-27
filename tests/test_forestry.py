@@ -114,6 +114,32 @@ class ForestryTests(unittest.TestCase):
                 forestry.segment(source, root, True, min_sample_points=20, reuse_existing=True)
         self.assertFalse((root / "segmentation.json").exists())
 
+    def test_legacy_segmentation_cannot_masquerade_as_refined(self):
+        source, root, meta = prepared_forest(self.root)
+        summary = forestry.analyze(root, meta, 20, 2., refine=False)
+        labels = (root / "sample_labels.npz").read_bytes()
+        with self.assertRaisesRegex(ValueError, "different correction method"):
+            forestry.segment(source, root, True, min_sample_points=20, reuse_existing=True)
+        self.assertEqual((root / "sample_labels.npz").read_bytes(), labels)
+        self.assertEqual(json.loads((root / "segmentation.json").read_text(encoding='utf8')), summary)
+        self.assertFalse((root / "parameters.json").exists())
+
+    def test_refinement_plot_failure_does_not_publish_success(self):
+        _, root, meta = prepared_forest(self.root)
+        with patch.object(forestry, "render_refinement", side_effect=RuntimeError("comparison failed")):
+            with self.assertRaisesRegex(RuntimeError, "comparison failed"):
+                forestry.analyze(root, meta, 20, 2.)
+        self.assertFalse((root / "segmentation.json").exists())
+
+    def test_cached_refinement_plot_repair_failure_removes_manifest(self):
+        source, root, meta = prepared_forest(self.root)
+        forestry.analyze(root, meta, 20, 2.)
+        (root / "refinement_comparison.png").write_bytes(b'')
+        with patch.object(forestry, "render_refinement", side_effect=RuntimeError("comparison failed")):
+            with self.assertRaisesRegex(RuntimeError, "comparison failed"):
+                forestry.segment(source, root, True, min_sample_points=20, reuse_existing=True)
+        self.assertFalse((root / "segmentation.json").exists())
+
     def test_missing_output_runtime_fails_before_engine_or_output_creation(self):
         source = self.root / "input.las"
         source.write_bytes(b"LASF")

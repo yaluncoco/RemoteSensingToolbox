@@ -24,8 +24,12 @@ STAGES = {
     "sampling": "正在生成体素采样…", "ground_filtering": "正在分离地面…",
     "vegetation_filtering": "正在筛选植被…", "treeiso": "正在进行 TreeIso 单木分割…",
     "numbering_candidates": "正在筛选候选并编号…", "segmentation_complete": "分割完成，准备回写原始点…",
+    "detecting_stems": "正在用原始点云的多个高度切片确认树干…",
+    "refining_instances": "正在拆分粘连并合并同树碎片…",
     "writing_full_resolution": "正在写入完整标注点云…", "validating_full_resolution": "正在逐点校验导出…",
     "indexing_tree_points": "正在建立单木索引…", "extracting_individual_trees": "正在逐树导出…",
+    "writing_training": "正在导出逐点对齐的训练数据…",
+    "validating_training": "正在逐点读回校验训练标签…", "training_complete": "训练数据导出完成。",
     "complete": "导出与校验完成。",
 }
 
@@ -141,11 +145,21 @@ class ForestryWindow(QWidget):
         self.min_points.setRange(20, 1000000)
         self.min_points.setValue(100)
         form.addRow("最少采样点数", self.min_points)
+        self.refine = QCheckBox("树干约束校正（减少粘连与重复分株）")
+        self.refine.setChecked(True)
+        self.refine.setToolTip("多高度切片确认树干，沿三维连接拆分多树块、合并同树碎片。树干不足或归属不明确时保留候选并标记复核。关闭可运行原始 TreeIso 流程作对照。")
+        form.addRow(self.refine)
         self.metres = QCheckBox("我确认 XYZ 坐标的单位均为米")
         form.addRow(self.metres)
         self.extract = QCheckBox("导出每棵候选树的独立 LAZ 文件")
         self.extract.setChecked(True)
         form.addRow(self.extract)
+        self.training_format = TerrainInput()
+        for label, value in (("TXT（逐点坐标＋实例标签）", "txt"), ("TXT ＋ NumPy", "both"),
+                             ("NumPy（内存映射数组）", "numpy"), ("不导出训练数据", "none")):
+            self.training_format.addItem(label, value)
+        self.training_format.setToolTip("保留全部原始点序和实例编号；未分类、重点复核点的训练标签设为 -1。TXT 文件可能较大。")
+        form.addRow("训练数据", self.training_format)
         layout.addWidget(self.inputs)
 
         note = QLabel("自动结果均需复核，编号数量是候选数。当前流程筛选离地 0.35～40 米的点；树冠交叠、近地树基和稀疏边缘可能存在遗漏或混分。")
@@ -238,7 +252,8 @@ class ForestryWindow(QWidget):
         self._launch(dict(source=source, output_parent=parent, coordinates_in_metres=True,
                           resolution=self.resolution.value(), terrain=self.terrain.currentData(),
                           min_sample_points=self.min_points.value(), min_height=self.min_height.value(),
-                          extract_trees=self.extract.isChecked()))
+                          extract_trees=self.extract.isChecked(), refine=self.refine.isChecked(),
+                          training_format=self.training_format.currentData()))
 
     def _launch(self, parameters):
         if self.worker is not None:
@@ -302,6 +317,13 @@ class ForestryWindow(QWidget):
         self.log.append(text)
         self.folder_button.setEnabled(True)
         self.preview_button.setEnabled(True)
+        if result.get("training"):
+            self.log.append("逐点对齐的训练数据：" + result["training"]["directory"] + "；字段说明见 README.md。")
+        correction = summary.get("refinement", {})
+        if correction.get("enabled"):
+            self.log.append(f"树干约束校正：{correction['active_anchor_count']} 根有多切片支持的树干；"
+                            f"拆分 {correction['split_segment_count']} 个粘连块，合并为 {correction['merged_group_count']} 组。"
+                            "校正前后对照见 refinement_comparison.png。")
 
     def _open_folder(self):
         if self.output_directory:

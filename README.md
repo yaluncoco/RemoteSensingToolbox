@@ -8,8 +8,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在[本项目 GitHub Release 的 Assets](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 中直接下载：
 
-- `RemoteSensingToolbox-1.5.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.5.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.6.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.6.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 每个正式版本在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告；v1.5.0 起软件内更新也使用本项目。原独立发行仓库目前不可用，旧版若检查更新失败，请手动下载本版安装包升级一次。
@@ -30,7 +30,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 | SHP 标签转 TIF | 自定义类别 ID、批量配对、坐标对照、分块栅格化 |
 | VOC 数据集制作 | 图像/标签整理、可复现的训练验证划分、16 位整数标签 |
 | 点云处理工作台 | 预览、去噪、格式转换、ScanNet、NPY 查看、标签合并、四种下采样 |
-| 单木分割 | 配置 CloudCompare 路径，CSF 地面过滤、TreeIso 单木编号、完整标注和逐树 LAZ 导出 |
+| 单木分割 | 配置 CloudCompare 路径，CSF + TreeIso 与多切片树干约束校正，减少粘连与重复分株，完整标注和逐树 LAZ 导出 |
+| 点云训练数据转换 | 逐点对齐的坐标、语义和实例标签导出，TXT / NumPy 互转，保留原始点索引和忽略掩码 |
 | 林业参数提取 | 独立提取树高、胸径、冠幅、冠面积、冠体积和估算材积，输出 CSV/Excel/LAZ 与质量提示 |
 
 v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安装后的程序完成真实数据分割和逐树导出验证。单木分割需要本机另行安装带 CSF、TreeIso 插件的 CloudCompare；可在工具窗口保存程序路径。支持 LAS/LAZ 及单点云 BIN，按文件内容识别格式，扩展名误写为 `.laz` 的 BIN 会自动转换。使用方法与输出说明见 [单木分割流程](docs/TREE-SEGMENTATION.md)。
@@ -47,6 +48,14 @@ v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安
 操作说明统一放在本仓库：[快速开始](Toolbox/quick_start.md) 介绍各工具的操作流程和输出特点，[完整使用手册](遥感点云工具箱_使用与维护手册.md) 提供详细参数。
 
 ## 本版改进
+
+- 单木分割默认开启树干约束校正：多根树干拆分粘连块，同一树干合并重复编号，树冠碎片按下部三维接触决定归属。倾斜树干、缺失树干和竞争归属分别处理。
+- 生成校正前后对照图、拆分/合并记录和原始 TreeIso 标签；已有旧版结果需重新运行，详情见 [单木分割流程](docs/TREE-SEGMENTATION.md)。
+- 增加已知树木归属的合成测试，并在发行程序内执行带粘连和碎片的完整校正、绘图、全量及逐树导出检查。
+- 默认输出实例分割训练 TXT，提供独立转换工具。保留点序、原始索引和实例编号；需重点复核的伪标签在训练列中设为忽略，详见 [训练数据格式](docs/TRAINING-DATA.md)。
+- 140 项回归与安装版真实点云完整流程通过，详见 [v1.6.0 验证记录](docs/VALIDATION-1.6.0.md)。
+
+保留 v1.5.0 的林业参数提取：
 
 - 新增独立的 [林业参数提取](docs/FOREST-METRICS.md)，支持复用已有编号或从原始点云检测树干；与单木分割共享 CloudCompare 路径。
 - 胸径使用圆拟合与圆弧覆盖检查，质量不足时保留缺失值；所有生效参数、方法、原始属性校验和输出哈希均可追溯。

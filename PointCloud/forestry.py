@@ -182,7 +182,7 @@ def _treeiso(root, resolution):
     save_json(root / "treeiso-run.json", result)
 
 
-def analyze(root, metadata, min_sample_points=100, min_height=2.0):
+def analyze(root, metadata, min_sample_points=100, min_height=2.0, refine=True):
     """Map TreeIso geometry back to source representatives, without assuming SF preservation."""
     with np.load(root / "sample.npz") as a:
         sample = {k: a[k] for k in a.files}
@@ -223,14 +223,30 @@ def analyze(root, metadata, min_sample_points=100, min_height=2.0):
         raise ValueError("Ground and vegetation sample sets overlap")
     semantic[ground_ids] = 1
     review[ground_ids] = 1
+    correction, refinement = {}, {"enabled": False, "version": None}
+    corrected = raw.astype("i8")
+    if refine:
+        from PointCloud.tree_refinement import read_stem_band, detect_anchors, refine_labels
+        progress(root, "detecting_stems")
+        stem_xyz, stem_height = read_stem_band(metadata["source"], np.asarray(metadata["working_origin"]), ground, cli.check_cancel)
+        anchors = detect_anchors(stem_xyz, stem_height, check=cli.check_cancel)
+        del stem_xyz, stem_height
+        progress(root, "refining_instances", anchors=len(anchors))
+        corrected, correction, refinement = refine_labels(xyz, height, raw, anchors, metadata["voxel_resolution"], check=cli.check_cancel)
+        for anchor in refinement["anchors"]:
+            anchor["world_center"] = (np.asarray(anchor["center"])+metadata["working_origin"][:2]).tolist()
+        save_json(root / "refinement.json", refinement)
+        np.savez_compressed(root / "refinement_labels.npz", sample_index=sample_ids, raw_treeiso_id=raw, refined_label=corrected)
     rows, rejected = [], []
-    grouped = np.argsort(raw, kind="stable")
-    starts = np.r_[0, np.flatnonzero(np.diff(raw[grouped])) + 1, len(raw)]
+    grouped = np.argsort(corrected, kind="stable")
+    starts = np.r_[0, np.flatnonzero(np.diff(corrected[grouped])) + 1, len(raw)]
     for start, end in zip(starts[:-1], starts[1:]):
         idx = grouped[start:end]
         pts, h = xyz[idx], height[idx]
         q = np.quantile(h, [.05, .5, .95, .99, 1])
-        raw_id = int(raw[idx[0]])
+        label = int(corrected[idx[0]])
+        detail = correction.get(label, {})
+        raw_id = detail.get("dominant_raw_id", int(raw[idx[0]]))
         if len(idx) < min_sample_points or q[2] < min_height:
             rejected.append({"raw_treeiso_id": raw_id, "sample_points": len(idx), "height_p95_m": float(q[2])})
             continue
@@ -244,9 +260,20 @@ def analyze(root, metadata, min_sample_points=100, min_height=2.0):
         if width.max() > q[2] * 1.5:
             flags.append("wide_or_possible_merge")
         center = np.median(pts[low, :2] if np.count_nonzero(low) >= 5 else pts[:, :2], axis=0)
+        position_basis = "low_points_median" if np.count_nonzero(low) >= 5 else "crown_median"
+        anchor_id = detail.get("anchor_id")
+        if refine and anchor_id is None:
+            flags.append(detail["reason"])
+        if anchor_id is not None:
+            center = np.asarray(anchors[anchor_id-1]["center"])
+            position_basis = "multi_slice_stem_axis_at_1.3m"
+            if any(anchor_id in split["anchor_ids"] for split in refinement["splits"]):
+                flags.append("corrected_crown_boundary")
         rows.append({"raw_treeiso_id": raw_id, "sample_points": len(idx), "x_local": float(center[0]), "y_local": float(center[1]),
                      "x_world": float(center[0] + metadata["working_origin"][0]), "y_world": float(center[1] + metadata["working_origin"][1]),
-                     "position_basis": "low_points_median" if np.count_nonzero(low) >= 5 else "crown_median",
+                     "position_basis": position_basis, "stem_anchor_id": anchor_id,
+                     "raw_treeiso_ids": "|".join(map(str, detail.get("raw_treeiso_ids", [raw_id]))),
+                     "refinement_reason": detail.get("reason", "disabled"),
                      "height_p99_m": float(q[3]), "height_max_m": float(q[4]), "crown_width_x_m": float(width[0]),
                      "crown_width_y_m": float(width[1]), "low_sample_points": int(low.sum()),
                      "review_status": 2 if flags else 1, "review_flags": "|".join(flags), "_idx": idx})
@@ -264,7 +291,8 @@ def analyze(root, metadata, min_sample_points=100, min_height=2.0):
     _write_inventory(root / "tree_inventory.csv", rows)
     summary = {"source": metadata["source"], "source_sha256": metadata["source_sha256"] if "source_sha256" in metadata else None,
                "source_point_count": metadata["source_point_count"], "sample_count": len(semantic), "vegetation_sample_count": len(raw),
-               "raw_segment_count": len(starts) - 1, "candidate_tree_count": len(rows),
+               "raw_segment_count": len(np.unique(raw)), "candidate_tree_count": len(rows),
+               "refinement": {k: v for k, v in refinement.items() if k not in ("anchors", "splits", "groups", "fragment_attachments")},
                "flagged_candidate_count": sum(r["review_status"] == 2 for r in rows), "rejected_fragment_count": len(rejected),
                "sample_class_counts": {str(k): int((semantic == k).sum()) for k in (0, 1, 2)},
                "sample_resolution_m": metadata["voxel_resolution"], "min_sample_points": min_sample_points, "min_height_p95_m": min_height,
@@ -281,6 +309,8 @@ def analyze(root, metadata, min_sample_points=100, min_height=2.0):
     cli.check_cancel()
     progress(root, "rendering_results")
     render_results(root, sample["xyz"], instance, rows)
+    if refine:
+        render_refinement(root, xyz, raw, instance[sample_ids], refinement)
     save_json(root / "segmentation.json", summary)
     return summary
 
@@ -296,6 +326,27 @@ def palette(count):
     colors = np.random.default_rng(20261106).uniform(.12, .9, (count + 1, 3))
     colors[0] = [.67, .67, .67]
     return colors
+
+
+def render_refinement(root, xyz, raw, refined, report):
+    """Same points and view before/after; anchors remain visible in both panels."""
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    fig = Figure(figsize=(15, 8), layout="constrained")
+    FigureCanvasAgg(fig)
+    axes = fig.subplots(1, 2, sharex=True, sharey=True)
+    pick = np.arange(0, len(xyz), max(1, len(xyz)//300000))
+    for ax, ids, title in zip(axes, (raw+1, refined), ("Original TreeIso proposals", "Stem-constrained correction")):
+        _, colors = np.unique(ids, return_inverse=True)
+        ax.scatter(xyz[pick, 0], xyz[pick, 1], c=palette(int(colors.max()))[colors[pick]], s=.35, linewidths=0, rasterized=True)
+        active = [a["center"] for a in report["anchors"] if a["active"]]
+        if active:
+            a = np.asarray(active)
+            ax.scatter(a[:, 0], a[:, 1], s=10, marker="+", c="black", linewidths=.5)
+        ax.set(title=title, aspect="equal", xlabel="X (local m)", ylabel="Y (local m)")
+    fig.suptitle(f"Validated stem anchors: {report['active_anchor_count']} | Split proposals: {report['split_segment_count']} | Merged groups: {report['merged_group_count']}")
+    fig.savefig(root/"refinement_comparison.png", dpi=170)
+    fig.clear()
 
 
 def check_output_runtime():
@@ -364,7 +415,7 @@ def render_results(root, xyz, ids, rows):
 
 
 def segment(source_path, output_directory, coordinates_in_metres, resolution=.2, terrain="FLAT", min_sample_points=100,
-            min_height=2.0, reuse_existing=False):
+            min_height=2.0, reuse_existing=False, refine=True):
     source, root = Path(source_path).resolve(strict=True), Path(output_directory).resolve()
     if not coordinates_in_metres:
         raise ValueError("Explicitly confirm source coordinates are in metres for forestry parameters")
@@ -375,7 +426,9 @@ def segment(source_path, output_directory, coordinates_in_metres, resolution=.2,
     # The workflow identifies contents before this stage; a valid LAS/LAZ may
     # itself have a misleading extension. laspy reads the actual file header.
     root.mkdir(parents=True, exist_ok=True)
-    params = {"resolution": resolution, "terrain": terrain, "min_sample_points": min_sample_points, "min_height": min_height}
+    from PointCloud.tree_refinement import REFINEMENT_VERSION
+    params = {"resolution": resolution, "terrain": terrain, "min_sample_points": min_sample_points, "min_height": min_height,
+              "refine": bool(refine), "refinement_version": REFINEMENT_VERSION if refine else None}
     with project_lock(root / "forest_job"):
         if (root / "source.json").exists():
             if not reuse_existing:
@@ -389,24 +442,33 @@ def segment(source_path, output_directory, coordinates_in_metres, resolution=.2,
                 raise ValueError("Legacy prepared stages only support their recorded FLAT terrain")
         else:
             meta = prepare(source, root, resolution)
-        save_json(root / "parameters.json", params)
         if (root / "segmentation.json").exists():
             summary = json.loads((root / "segmentation.json").read_text(encoding="utf-8"))
+            previous = summary.get("refinement", {})
+            if bool(previous.get("enabled")) != bool(refine) or (refine and previous.get("version") != REFINEMENT_VERSION):
+                raise ValueError("Existing segmentation uses a different correction method; choose a new output directory")
             # v1.4.0 wrote its manifest before rendering. Repair incomplete
             # cached outputs without rerunning TreeIso or changing tree IDs.
-            plots = ("instance_overview.png", "instance_map.svg", "tree_gallery.png")
+            plots = ("instance_overview.png", "instance_map.svg", "tree_gallery.png") + (("refinement_comparison.png",) if refine else ())
             if any(not (root / name).is_file() or not (root / name).stat().st_size for name in plots):
                 (root / "segmentation.json").unlink()
                 progress(root, "rendering_results")
                 with np.load(root / "sample.npz") as sample, np.load(root / "sample_labels.npz") as labels:
                     rows = json.loads((root / "tree_inventory.json").read_text(encoding="utf-8"))
                     render_results(root, sample["xyz"], labels["instance_id"], rows)
+                    if refine:
+                        with np.load(root / "refinement_labels.npz") as refined:
+                            ids = refined["sample_index"]
+                            report = json.loads((root / "refinement.json").read_text(encoding="utf-8"))
+                            render_refinement(root, sample["xyz"][ids], refined["raw_treeiso_id"], labels["instance_id"][ids], report)
                 save_json(root / "segmentation.json", summary)
+            save_json(root / "parameters.json", params)
             return summary
+        save_json(root / "parameters.json", params)
         _ground_and_vegetation(root, params)
         _treeiso(root, resolution)
         progress(root, "numbering_candidates")
-        result = analyze(root, meta, min_sample_points, min_height)
+        result = analyze(root, meta, min_sample_points, min_height, refine)
         progress(root, "segmentation_complete", candidates=result["candidate_tree_count"])
         return result
 

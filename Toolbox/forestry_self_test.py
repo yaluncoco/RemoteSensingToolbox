@@ -98,6 +98,70 @@ def check_postprocessing():
                 "source_points": len(original.points), "trees": 2, "verification": exported["verification"]}
 
 
+def check_refinement():
+    """Both merge and split errors with known tree identity, through full export."""
+    with tempfile.TemporaryDirectory(prefix="toolbox-stem-refine-") as directory:
+        root = Path(directory)
+        ground = np.array([[x, y, 0.] for x in np.arange(-2., 6., .2) for y in np.arange(-2., 2., .2)])
+        parts, truth = [ground], [np.zeros(len(ground), dtype="u1")]
+        h = np.arange(.45, 5.05, .025)
+        theta = np.arange(60)*2*np.pi/60
+        radius = .16+np.clip((h-2.5)/1.5, 0, 1)*.7
+        for tree_id, base in enumerate((0., 1.9), 1):
+            p = np.column_stack((np.repeat(base+.4*(h-1.3), len(theta))+np.repeat(radius, len(theta))*np.tile(np.cos(theta), len(h)),
+                                 np.repeat(radius, len(theta))*np.tile(np.sin(theta), len(h)), np.repeat(h, len(theta))))
+            parts.append(p)
+            truth.append(np.full(len(p), tree_id, dtype="u1"))
+        xyz = np.concatenate(parts)
+        header = laspy.LasHeader(point_format=3, version="1.2")
+        header.offsets, header.scales = [430000., 4460000., 90.], [.001]*3
+        header.add_extra_dim(laspy.ExtraBytesParams(name="known_tree", type="u1"))
+        cloud = laspy.LasData(header)
+        cloud.x, cloud.y, cloud.z = (xyz+header.offsets).T
+        cloud.known_tree = np.concatenate(truth)
+        cloud.intensity = np.arange(len(xyz), dtype="u2")
+        source = root/"已知双树.laz"
+        cloud.write(source)
+        job = root/"校正结果"
+        meta = forestry.prepare(source, job, .12)
+        with np.load(job/"sample.npz") as sample:
+            p = sample["xyz"]
+            known = np.asarray(cloud.known_tree)[sample["source_index"]]
+        vegetation = known > 0
+        heights = p[vegetation, 2]
+        # Both trees are initially merged; tree 2's upper crown is also wrongly
+        # detached. No known_tree values are passed to the correction algorithm.
+        bad_labels = ((known[vegetation] == 2) & (heights > 3.8)).astype("u4")
+        np.savez_compressed(job/"vegetation.npz", xyz=p[vegetation], height=heights,
+                            sample_index=np.flatnonzero(vegetation).astype("u4"))
+        forestry.write_ply(job/"sample_local_ground_points.ply", p[~vegetation])
+        forestry.write_ply(job/"treeiso_local.ply", p[vegetation], {"scalar_final_segs": bad_labels.astype("f4")})
+        summary = forestry.analyze(job, meta, 20, 2.)
+        correction = summary["refinement"]
+        if correction["active_anchor_count"] != 2 or correction["split_segment_count"] != 1 or correction["merged_group_count"] != 1:
+            raise AssertionError("Known split/merge errors were not corrected: "+str(correction))
+        if summary["candidate_tree_count"] != 2:
+            raise AssertionError("Correction did not retain exactly two trees")
+        result = forestry.export(job)
+        exported = laspy.read(result["full_cloud"])
+        truth = np.asarray(exported.known_tree)
+        labels = np.asarray(exported.instance_id)
+        mask = truth > 0
+        def score(a, b):
+            return sum(np.unique(b[a == k], return_counts=True)[1].max() for k in np.unique(a))/len(a)
+        agreement = min(score(truth[mask], labels[mask]), score(labels[mask], truth[mask]))
+        if agreement < .97:
+            raise AssertionError(f"Known partition agreement is only {agreement:.3f}")
+        from PIL import Image
+        with Image.open(job/"refinement_comparison.png") as image:
+            image.load()
+            if np.asarray(image.convert("RGB")).std() < 1:
+                raise AssertionError("Blank refinement comparison")
+        return {"fixture": "two leaning trees with touching crowns; merged lower parts and detached upper crown",
+                "source_points": len(xyz), "known_trees": 2, "partition_agreement": agreement,
+                "refinement": correction, "verification": result["verification"]}
+
+
 def synthetic_forest(root):
     ground = np.array([[x, y, 0.] for x in np.arange(-3, 15, .2) for y in np.arange(-3, 9, .2)])
     rng = np.random.default_rng(12)
@@ -156,8 +220,16 @@ def check_gui_workflow(app, binary, source=None, output_parent=None, screenshot=
             result = window.result
             job = Path(result["output_directory"])
             plots = verify_plots(job)
+            correction = result["segmentation"]["refinement"]
+            if not correction["enabled"] or not (job/"refinement.json").is_file() or not (job/"refinement_comparison.png").is_file():
+                raise AssertionError("Default GUI workflow did not run stem correction")
             if not all(result["export"]["verification"].values()):
                 raise AssertionError("Workflow export verification failed")
+            training = result.get("training")
+            if not training or training["format"] != "txt" or training["point_count"] != result["export"]["source_point_count"]:
+                raise AssertionError("Default workflow did not export aligned TXT training data")
+            if not all(training["verification"].values()):
+                raise AssertionError("Training point/label alignment failed")
             if len(list((job / "trees").glob("*.laz"))) != result["segmentation"]["candidate_tree_count"]:
                 raise AssertionError("Missing tree output files")
             if json.loads((job / "progress.json").read_text(encoding="utf8"))["stage"] != "complete":

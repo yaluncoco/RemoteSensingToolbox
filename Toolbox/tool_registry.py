@@ -129,6 +129,17 @@ TOOLS: tuple[ToolSpec, ...] = (
         tags=("树木", "分割", "林地", "TreeIso", "CSF", "CloudCompare", "LAS", "LAZ"),
     ),
     ToolSpec(
+        id="forest-training",
+        title="点云训练数据转换",
+        category="点云处理",
+        summary="导出逐点对齐的坐标与实例标签，支持 TXT 和 NumPy 互转。",
+        module_name="PointCloud.forestry_training_gui",
+        class_name="TrainingWindow",
+        project_dir=POINT_CLOUD_PROJECT_DIR,
+        icon_name="SP_FileDialogDetailedView",
+        tags=("训练", "标签", "实例分割", "TXT", "NumPy", "格式转换"),
+    ),
+    ToolSpec(
         id="forest-metrics",
         title="林业参数提取",
         category="点云处理",

@@ -528,7 +528,12 @@ def main() -> int:
     parser.add_argument("--forestry-test-output", type=Path, help="Existing directory in which to retain the real-data self-test outputs")
     parser.add_argument("--metrics-test-input", type=Path, help="Run forestry parameter extraction on this real file")
     parser.add_argument("--metrics-test-output", type=Path, help="Retain forestry parameter extraction self-test outputs here")
+    parser.add_argument("--training-test-input", type=Path, help="Export aligned training data from this completed forest job")
+    parser.add_argument("--training-test-output", type=Path, help="Retain training data self-test outputs here")
     args = parser.parse_args()
+    if args.training_test_input or args.training_test_output:
+        if not (args.self_test and args.training_test_input and args.training_test_output):
+            parser.error("Training checks require --self-test, --training-test-input and --training-test-output")
     if args.metrics_test_input or args.metrics_test_output:
         if not (args.self_test and args.metrics_test_input and args.metrics_test_output):
             parser.error("Metrics checks require --self-test, --metrics-test-input and --metrics-test-output")
@@ -558,7 +563,7 @@ def main() -> int:
         report = args.report or log_dir / "self-test.json"
         return run_self_test(app, report, args.screenshots, args.check_renderer, args.check_cloudcompare,
                              args.forestry_test_input, args.forestry_test_output,
-                             args.metrics_test_input, args.metrics_test_output)
+                             args.metrics_test_input, args.metrics_test_output, args.training_test_input, args.training_test_output)
 
     def handle_exception(exc_type, value, tb):
         logging.error("Unhandled exception", exc_info=(exc_type, value, tb))

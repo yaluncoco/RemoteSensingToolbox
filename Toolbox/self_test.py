@@ -20,7 +20,8 @@ from Toolbox.version import APP_VERSION
 def run_self_test(app, report_path: Path, screenshots: Path | None = None, check_renderer=False,
                   cloudcompare_path: Path | None = None, forestry_input: Path | None = None,
                   forestry_output: Path | None = None, metrics_input: Path | None = None,
-                  metrics_output: Path | None = None) -> int:
+                  metrics_output: Path | None = None, training_input: Path | None = None,
+                  training_output: Path | None = None) -> int:
     from Toolbox.main import ToolboxWindow
     from Toolbox.tool_registry import TOOLS
 
@@ -276,6 +277,12 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
 
     from Toolbox.forestry_self_test import check_postprocessing, check_gui_workflow
     check("forestry-plots-and-export", check_postprocessing)
+    from Toolbox.forestry_self_test import check_refinement
+    check("forestry-stem-refinement", check_refinement)
+    from Toolbox.training_self_test import check_training_gui
+    check("forestry-training-gui", lambda: check_training_gui(app))
+    if training_input:
+        check("forestry-training-real-data", lambda: check_training_gui(app, training_input, training_output))
     from Toolbox.metrics_self_test import check_metrics_gui
     check("metrics-gui-complete-workflow", lambda: check_metrics_gui(app))
     if metrics_input:

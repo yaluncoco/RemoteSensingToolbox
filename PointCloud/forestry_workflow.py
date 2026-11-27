@@ -9,11 +9,13 @@ from PointCloud.forestry_input import identify_input, normalize_input
 
 def run_workflow(source, output_parent, binary, *, coordinates_in_metres=False,
                  resolution=.2, terrain="FLAT", min_sample_points=100, min_height=2.,
-                 extract_trees=True, cancelled=lambda: False, notify=lambda data: None):
+                 extract_trees=True, refine=True, training_format="txt", cancelled=lambda: False, notify=lambda data: None):
     from PointCloud import forestry
     source = Path(source).expanduser().resolve(strict=True)
     if not coordinates_in_metres:
         raise ValueError("请确认点云的 XYZ 坐标单位均为米。")
+    if training_format not in ("none", "txt", "numpy", "both"):
+        raise ValueError("训练数据格式无效。")
     kind = identify_input(source)
     parent = Path(output_parent).expanduser().resolve(strict=True)
     if not parent.is_dir():
@@ -34,8 +36,18 @@ def run_workflow(source, output_parent, binary, *, coordinates_in_metres=False,
             normalized, input_details = normalize_input(source, root, kind)
             forestry.save_json(root / "input.json", input_details)
             summary = forestry.segment(str(normalized), str(root), True, resolution, terrain,
-                                       min_sample_points, min_height)
+                                       min_sample_points, min_height, refine=refine)
             exported = forestry.export(root, extract_trees)
+            training = None
+            if training_format != "none":
+                from PointCloud.forestry_training import export_training
+                forestry.progress(root, "writing_training", points=0, total=exported["source_point_count"])
+                def training_progress(data):
+                    forestry.progress(root, data["stage"], points=data["points"], total=data["total"])
+                training = export_training(root, root / "training", training_format,
+                                           cancelled=cancelled, notify=training_progress)
+                forestry.progress(root, "complete", candidates=summary["candidate_tree_count"],
+                                  full_resolution_points=exported["source_point_count"])
             if kind == "cloudcompare_bin":
                 from PointCloud.forestry_io import fingerprint
                 if fingerprint(source) != input_details["original_sha256"]:
@@ -45,6 +57,6 @@ def run_workflow(source, output_parent, binary, *, coordinates_in_metres=False,
             forestry.save_json(root / "progress.json", {"stage": state, "error": str(exc)})
             raise
     result = {"output_directory": str(root), "segmentation": summary, "export": exported,
-              "binary": capability["binary"], "input": input_details}
+              "binary": capability["binary"], "input": input_details, "training": training}
     forestry.save_json(root / "result.json", result)
     return result
