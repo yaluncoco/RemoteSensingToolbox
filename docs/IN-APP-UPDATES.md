@@ -26,14 +26,13 @@
 
 ## 发行维护
 
-软件内更新源：[yaluncoco/RemoteSensingToolbox-Releases](https://github.com/yaluncoco/RemoteSensingToolbox-Releases)，该仓库仅存放发行文件。[原项目仓库](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest)的每个正式 Release 也必须在 Assets 中提供同一套文件，方便用户直接下载。
+v1.5.0 起，软件内更新源为本项目 [yaluncoco/RemoteSensingToolbox](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest)。2026-11-27 检查发现旧 `RemoteSensingToolbox-Releases` 仓库返回 404，当前账号的仓库列表也不存在该仓库。因此新版使用已核实公开的主项目；旧版若无法自动更新，需要手动安装一次新版。
 
-1. 更新 `Toolbox/version.py` 的 `APP_VERSION` 和安装器默认版本，完成测试与打包。
-   单木分割版本须使用 `build_windows.ps1 -CloudCompare "CloudCompare.exe 的完整路径"`，确认冻结程序的 `forestry-plots-and-export` 和 `forestry-gui-complete-workflow` 均通过。再用实际安装后的 EXE 加 `--forestry-test-input` / `--forestry-test-output` 验证真实数据，检查图像解码、逐点属性及逐树读回。源码环境成功、窗口能打开或插件检测成功，都不能替代安装版完整流程验证。
-2. 在原项目仓库和发行仓库创建同一数字版本的 Release，例如 `v1.3.0`，先作为草稿上传完整资产。
-3. 两个仓库的 Assets 均需上传安装包、便携 ZIP、`SHA256SUMS.txt` 和验证报告。安装包必须使用 `RemoteSensingToolbox-1.3.0-windows-x64-setup.exe` 这样的准确名称；原项目 Release 不能只提供外部链接或 GitHub 自动生成的源码压缩包。
-4. 确认两个仓库的资产状态为 `uploaded`，大小正确，API 返回 `sha256:...` digest，且均与同一套本地文件一致，再公开发布并设为 Latest。
-5. 通过匿名 GitHub API 读取最新版本，验证安装包可下载，并检查原项目 Release 的 Assets 已完整列出可下载文件。
+1. 更新 `Toolbox/version.py` 和安装器版本，完成测试与打包。
+2. 使用 `build_windows.ps1 -CloudCompare "CloudCompare.exe 的完整路径"`，必须通过原单木分割和新增参数提取的冻结完整流程检查。再用实际安装后的 EXE 加 `--metrics-test-input` / `--metrics-test-output` 验证真实点云。
+3. 在主项目创建同版本草稿 Release，上传安装包、便携 ZIP、`SHA256SUMS.txt` 和验证报告。
+4. 校验所有资产状态、大小和 GitHub SHA-256 digest 与本地一致，然后公开并设为 Latest。
+5. 匿名读取最新版本，使用应用实际更新器下载并校验安装包。
 
 客户端只接受正式发布版本，不安装草稿、预发布或版本号不高于当前版本的更新。下载地址根据固定发行仓库、版本号和资产名称构造，不使用远程返回的任意链接。下载使用 HTTPS，重定向不允许降级到 HTTP。程序不内置 GitHub 访问令牌。
 

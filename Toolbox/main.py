@@ -526,7 +526,12 @@ def main() -> int:
     parser.add_argument("--check-cloudcompare", type=Path, help="Also check this external CloudCompare executable during self-test")
     parser.add_argument("--forestry-test-input", type=Path, help="Also run the forestry GUI workflow on this real file during self-test")
     parser.add_argument("--forestry-test-output", type=Path, help="Existing directory in which to retain the real-data self-test outputs")
+    parser.add_argument("--metrics-test-input", type=Path, help="Run forestry parameter extraction on this real file")
+    parser.add_argument("--metrics-test-output", type=Path, help="Retain forestry parameter extraction self-test outputs here")
     args = parser.parse_args()
+    if args.metrics_test_input or args.metrics_test_output:
+        if not (args.self_test and args.metrics_test_input and args.metrics_test_output):
+            parser.error("Metrics checks require --self-test, --metrics-test-input and --metrics-test-output")
     if args.forestry_test_input or args.forestry_test_output:
         if not (args.self_test and args.check_cloudcompare and args.forestry_test_input and args.forestry_test_output):
             parser.error("Real-data forestry checks require --self-test, --check-cloudcompare, --forestry-test-input and --forestry-test-output")
@@ -552,7 +557,8 @@ def main() -> int:
         from Toolbox.self_test import run_self_test
         report = args.report or log_dir / "self-test.json"
         return run_self_test(app, report, args.screenshots, args.check_renderer, args.check_cloudcompare,
-                             args.forestry_test_input, args.forestry_test_output)
+                             args.forestry_test_input, args.forestry_test_output,
+                             args.metrics_test_input, args.metrics_test_output)
 
     def handle_exception(exc_type, value, tb):
         logging.error("Unhandled exception", exc_info=(exc_type, value, tb))

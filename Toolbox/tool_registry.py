@@ -128,6 +128,17 @@ TOOLS: tuple[ToolSpec, ...] = (
         icon_name="SP_DirIcon",
         tags=("树木", "分割", "林地", "TreeIso", "CSF", "CloudCompare", "LAS", "LAZ"),
     ),
+    ToolSpec(
+        id="forest-metrics",
+        title="林业参数提取",
+        category="点云处理",
+        summary="复用单木编号或检测树干，提取树高、胸径、冠幅和估算材积。",
+        module_name="PointCloud.forest_metrics_gui",
+        class_name="ForestMetricsWindow",
+        project_dir=POINT_CLOUD_PROJECT_DIR,
+        icon_name="SP_FileDialogDetailedView",
+        tags=("树高", "胸径", "冠幅", "材积", "林业", "参数", "CSV", "Excel"),
+    ),
 )
 
 

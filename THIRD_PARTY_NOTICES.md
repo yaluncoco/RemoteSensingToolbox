@@ -22,6 +22,7 @@
 - laspy：https://github.com/laspy/laspy
 - lazrs：https://github.com/tmontaigu/laz-rs
 - plyfile：https://github.com/dranjan/python-plyfile
+- openpyxl：https://openpyxl.readthedocs.io/（MIT，用于林业参数 Excel 导出）
 
 单木分割可调用用户另行安装的 CloudCompare（https://github.com/CloudCompare/CloudCompare）及 CSF / TreeIso 插件（https://github.com/truebelief/cc-treeiso-plugin）。本项目不打包这些外部程序或复制其算法源码。流程封装迁移自本用户的本地 CloudCompare MCP 工作区。
 

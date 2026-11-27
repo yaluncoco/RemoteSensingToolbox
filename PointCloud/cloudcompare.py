@@ -134,13 +134,13 @@ def run(args, job, timeout=180):
     return {"exit_code": process.returncode, "command": command, "log": str(log), "log_tail": text[-5000:]}
 
 
-def probe(binary, cancelled=lambda: False):
+def probe(binary, cancelled=lambda: False, required=("CSF", "TREEISO")):
     with execution(binary, cancelled), tempfile.TemporaryDirectory(prefix="toolbox-cc-check-") as directory:
         result = run(["-HELP"], Path(directory), timeout=45)
         text = "\n".join(p.read_text(encoding="utf-8", errors="replace")
                          for p in Path(directory).glob("*.log"))
         commands = set(re.findall(r"(?<!\w)-([A-Z][A-Z0-9_]+)\s*:", text))
-        missing = sorted({"CSF", "TREEISO"} - commands)
+        missing = sorted(set(required) - commands)
         return {"binary": result["command"][0], "available": not missing,
                 "missing": missing, "commands": sorted(commands)}
 

@@ -8,11 +8,11 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在[本项目 GitHub Release 的 Assets](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 中直接下载：
 
-- `RemoteSensingToolbox-1.4.1-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.4.1-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.5.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.5.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
-每个正式版本都在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告，并将相同文件同步到公开发行仓库，供软件内更新使用。
+每个正式版本在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告；v1.5.0 起软件内更新也使用本项目。原独立发行仓库目前不可用，旧版若检查更新失败，请手动下载本版安装包升级一次。
 
 安装包包含 Python、Qt、GIS 和点云运行库，无需另装 Python/Conda。安装后可从开始菜单打开，在系统“已安装的应用”中卸载。发行包尚未配置代码签名。
 
@@ -31,6 +31,7 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 | VOC 数据集制作 | 图像/标签整理、可复现的训练验证划分、16 位整数标签 |
 | 点云处理工作台 | 预览、去噪、格式转换、ScanNet、NPY 查看、标签合并、四种下采样 |
 | 单木分割 | 配置 CloudCompare 路径，CSF 地面过滤、TreeIso 单木编号、完整标注和逐树 LAZ 导出 |
+| 林业参数提取 | 独立提取树高、胸径、冠幅、冠面积、冠体积和估算材积，输出 CSV/Excel/LAZ 与质量提示 |
 
 v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安装后的程序完成真实数据分割和逐树导出验证。单木分割需要本机另行安装带 CSF、TreeIso 插件的 CloudCompare；可在工具窗口保存程序路径。支持 LAS/LAZ 及单点云 BIN，按文件内容识别格式，扩展名误写为 `.laz` 的 BIN 会自动转换。使用方法与输出说明见 [单木分割流程](docs/TREE-SEGMENTATION.md)。
 
@@ -47,6 +48,12 @@ v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安
 
 ## 本版改进
 
+- 新增独立的 [林业参数提取](docs/FOREST-METRICS.md)，支持复用已有编号或从原始点云检测树干；与单木分割共享 CloudCompare 路径。
+- 胸径使用圆拟合与圆弧覆盖检查，质量不足时保留缺失值；所有生效参数、方法、原始属性校验和输出哈希均可追溯。
+- 真实数据和发行包完整流程验证见 [v1.5.0 验证记录](docs/VALIDATION-1.5.0.md)。
+
+此前单木分割改进：
+
 - 新增单木分割工具：保存 CloudCompare 路径，后台执行 CSF 地面过滤与 TreeIso 分割，生成完整标注点云、逐树 LAZ、编号清单和预览图。
 - 按文件头识别 LAS/LAZ/BIN，自动转换扩展名误写为 `.laz` 的 CloudCompare BIN，并校验导出的数值属性、点序和逐树文件。
 - 四份真实人工林数据共 56,924,569 点完成测试，生成 1,403 个待人工复核的单木候选；结果未跨文件去重，详细记录见 [单木分割验证](docs/VALIDATION-TREE-SEGMENTATION.md)。
@@ -61,7 +68,7 @@ v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安
 - 更新窗口内直接下载 Windows 安装包，显示下载大小和进度，支持取消、失败重试及校验后的缓存复用。
 - 核对安装包名称、大小和 SHA-256，拒绝不完整或损坏文件；启动安装前再次校验。
 - 点击“安装并重启”后，安装程序等待旧进程退出，再升级并自动启动新版；运行中的处理任务和三维窗口会阻止安装。
-- 更新源迁移到独立的公开发行仓库 [RemoteSensingToolbox-Releases](https://github.com/yaluncoco/RemoteSensingToolbox-Releases)，客户端无需登录或配置访问令牌。
+- v1.5.0 更新源为本项目的公开 Releases，客户端无需登录或配置访问令牌。
 - 保留 v1.2.0 的多格式点云可视化；[格式与操作示例](docs/POINT-CLOUD-VISUALIZATION.md)。
 
 v1.3.0 用户可直接在软件内更新。从 v1.2.0 或更早版本升级，需要先运行一次当前版本的安装包，此后可在软件内完成更新。便携版点击“安装并重启”会安装为当前用户版本，原便携目录保留。详见 [应用内更新说明](docs/IN-APP-UPDATES.md)。
