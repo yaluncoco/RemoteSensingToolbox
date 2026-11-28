@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt5.QtCore import QSettings, Qt, QThread, QUrl, pyqtSignal
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
+    QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
     QScrollArea, QSpinBox, QTextEdit, QToolButton, QAbstractSpinBox, QVBoxLayout, QWidget,
 )
@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 from PointCloud import cloudcompare
 from Toolbox.task_support import bind_task
 from Toolbox.version import APP_ID
+from Toolbox.soft_widgets import SoftComboBox
 
 
 STAGES = {
@@ -97,7 +98,7 @@ class IntegerInput(_SoftStepper, _NoWheelMixin, QSpinBox):
     pass
 
 
-class TerrainInput(_NoWheelMixin, QComboBox):
+class TerrainInput(_NoWheelMixin, SoftComboBox):
     pass
 
 

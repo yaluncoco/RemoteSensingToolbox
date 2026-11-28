@@ -8,8 +8,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在[本项目 GitHub Release 的 Assets](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 中直接下载：
 
-- `RemoteSensingToolbox-1.7.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.7.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.7.1-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.7.1-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 每个正式版本在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告；v1.5.0 起软件内更新也使用本项目。原独立发行仓库目前不可用，旧版若检查更新失败，请手动下载本版安装包升级一次。
@@ -49,6 +49,7 @@ v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安
 
 ## 本版改进
 
+- v1.7.1 统一林业、点云与图像工具的下拉框：圆角边框、清晰的线条箭头、柔和的选中/悬停效果，以及可滚动的展开列表；长选项自动加宽，禁用选项明确区分。保留键盘选择和原有滚轮防误改行为，详见 [验证记录](docs/VALIDATION-1.7.1.md)。
 - 将三个林业工具收纳到 **点云处理 → 林业功能**，按 **01 单木分割 → 02 林业参数提取 → 03 训练数据导出 / 转换** 排列。训练导出可直接接分割结果，不要求先提取参数。
 - 分割完成后直接带入结果；参数提取明确复用原实例编号与地面分类，从参数提取继续训练导出仍使用原分割目录。
 - 运行中的任务拒绝替换输入；训练转换期间锁定输入与格式。手动更换参数提取的输入会清除旧的交接关系。

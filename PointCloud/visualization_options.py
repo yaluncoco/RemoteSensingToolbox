@@ -1,6 +1,7 @@
 """Compact, explicit format controls for prediction visualization."""
 from PyQt5.QtCore import Qt, QEvent, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QWheelEvent
+from Toolbox.soft_widgets import SoftComboBox
 from PyQt5.QtWidgets import (
     QWidget, QFormLayout, QHBoxLayout, QLabel, QComboBox, QSpinBox,
     QCheckBox, QPlainTextEdit, QPushButton, QColorDialog, QSizePolicy,
@@ -26,7 +27,7 @@ def _scroll_enclosing_page(widget, event):
     event.ignore()
 
 
-class _NoWheelComboBox(QComboBox):
+class _NoWheelComboBox(SoftComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFocusPolicy(Qt.StrongFocus)

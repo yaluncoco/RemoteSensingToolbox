@@ -51,7 +51,7 @@ try {
     if ($Process.ExitCode -ne 0 -or -not (Test-Path $Report)) { throw "The frozen application self-test failed." }
     $Result = Get-Content $Report -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $Result.ok -or -not $Result.frozen) { throw "Frozen self-test did not pass." }
-    foreach ($Name in @("forestry-plots-and-export", "forestry-stem-refinement", "forestry-training-gui", "metrics-gui-complete-workflow") + $(if ($CloudCompare) { "forestry-gui-complete-workflow", "metrics-gui-csf-stems", "forestry-navigation-complete-workflow" })) {
+    foreach ($Name in @("dropdown-controls", "forestry-plots-and-export", "forestry-stem-refinement", "forestry-training-gui", "metrics-gui-complete-workflow") + $(if ($CloudCompare) { "forestry-gui-complete-workflow", "metrics-gui-csf-stems", "forestry-navigation-complete-workflow" })) {
         if (-not ($Result.checks | Where-Object { $_.name -eq $Name -and $_.ok })) {
             throw "Required frozen forestry check did not pass: $Name"
         }

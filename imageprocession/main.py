@@ -149,11 +149,8 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    try:
-        with open(resource_path("style.qss"), "r", encoding="utf-8") as handle:
-            app.setStyleSheet(handle.read())
-    except FileNotFoundError:
-        print("style.qss not found. Using default styles.")
+    from Toolbox.appearance import apply_application_style
+    apply_application_style(app)
     main_win = MainWindow()
     main_win.show()
     sys.exit(app.exec_())

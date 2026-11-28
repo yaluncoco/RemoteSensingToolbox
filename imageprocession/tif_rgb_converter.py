@@ -8,10 +8,10 @@ import numpy as np
 from PyQt5.QtCore import QThread, Qt, pyqtSignal
 from Toolbox.file_io import atomic_output
 from Toolbox.task_support import bind_task
+from Toolbox.soft_widgets import SoftComboBox
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
-    QComboBox,
     QDesktopWidget,
     QFileDialog,
     QFormLayout,
@@ -337,7 +337,7 @@ class TifRgbConverterWindow(QWidget):
         params_layout = QFormLayout(params_group)
         params_layout.setSpacing(10)
 
-        self.output_format_combo = QComboBox()
+        self.output_format_combo = SoftComboBox()
         self.output_format_combo.addItems(OUTPUT_FORMATS)
         self.output_format_combo.setToolTip("PNG/JPG 适合普通查看；RGB TIF 会尽量保留原图地理信息。")
         params_layout.addRow("输出格式:", self.output_format_combo)

@@ -12,11 +12,12 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout
                              QHBoxLayout, QGridLayout, QWidget, QFileDialog, QLabel,
                              QGroupBox, QStackedWidget, QFrame, QCheckBox,
                              QProgressBar, QMessageBox, QTabWidget, QSizePolicy,
-                             QSpinBox, QDoubleSpinBox, QFormLayout, QTextEdit, QLineEdit, QComboBox)
+                             QSpinBox, QDoubleSpinBox, QFormLayout, QTextEdit, QLineEdit)
 
 from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtWidgets import QScrollArea
 from Toolbox.version import APP_VERSION
+from Toolbox.soft_widgets import SoftComboBox
 from PyQt5.QtGui import QFont, QIcon
 from PointCloud.visualization_options import VisualizationFormatWidget
 
@@ -1094,7 +1095,7 @@ class PointCloudProcessor(QMainWindow):
         param_group.setStyleSheet(self.get_groupbox_style())
         param_layout = QFormLayout(param_group)
 
-        method_combo = QComboBox()
+        method_combo = SoftComboBox()
         method_combo.addItems(["随机采样 (Random)", "体素网格 (Voxel)", "均匀采样 (Uniform)", "最远点采样 (Farthest)"])
         method_combo.setToolTip(
             "随机/均匀采样：速度快，按目标点数取样。\n最远点采样：分布均匀，大文件耗时较长。\n体素网格：每个体素保留一个原始点，保留全部颜色、标签和特征列。")
@@ -2095,11 +2096,8 @@ class PointCloudProcessor(QMainWindow):
 
 if __name__ == '__main__':  # This part is usually in main.py, but for completeness if run directly
     app = QApplication(sys.argv)
-    if 'Fusion' in QApplication.styleKeys():
-        try:
-            app.setStyle('Fusion'); print("Applied Fusion style.")
-        except Exception as e:
-            print(f"Could not apply Fusion style: {e}")
+    from Toolbox.appearance import apply_application_style
+    apply_application_style(app)
     ex = PointCloudProcessor()
     ex.show()
     sys.exit(app.exec_())

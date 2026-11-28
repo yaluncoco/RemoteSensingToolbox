@@ -1,0 +1,58 @@
+QComboBox {
+    /* Use a bounded list popup instead of the platform menu/scroller frame. */
+    combobox-popup: 0;
+    color: #2c4852;
+    background: #ffffff;
+    border: 1px solid #d3e0e5;
+    border-radius: 8px;
+    padding: 7px 34px 7px 12px;
+    min-height: 20px;
+    selection-background-color: #e0eeea;
+    selection-color: #205e55;
+}
+QComboBox:hover { background: #f7fbfa; border-color: #9ebfb9; }
+QComboBox:focus, QComboBox:on { background: #f7fbfa; border-color: #5b9e93; }
+QComboBox:disabled { color: #94a4ad; background: #f0f4f5; border-color: #e2e9ec; }
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 30px;
+    border: none;
+    background: transparent;
+}
+QComboBox::down-arrow {
+    image: url("@ICON_DIR@/chevron-down.svg");
+    width: 14px;
+    height: 14px;
+}
+QComboBox::down-arrow:on { image: url("@ICON_DIR@/chevron-up.svg"); }
+QComboBox::down-arrow:disabled { image: url("@ICON_DIR@/chevron-disabled.svg"); }
+QComboBox QLineEdit { color: #2c4852; background: transparent; border: none; padding: 0; }
+QFrame#comboPopupFrame { background: transparent; border: none; }
+QListView#comboPopup {
+    color: #324e58;
+    background: #ffffff;
+    border: 1px solid #d3e0e5;
+    border-radius: 10px;
+    padding: 5px;
+    outline: none;
+    selection-background-color: #e0eeea;
+    selection-color: #205e55;
+}
+QListView#comboPopup::item {
+    min-height: 22px;
+    padding: 6px 10px;
+    margin: 2px 0;
+    border: none;
+    border-radius: 6px;
+}
+QListView#comboPopup::item:hover { color: #205e55; background: #eff6f4; }
+QListView#comboPopup::item:selected { color: #205e55; background: #e0eeea; }
+QListView#comboPopup::item:disabled { color: #a2afb7; background: transparent; }
+QListView#comboPopup QScrollBar:vertical { width: 8px; margin: 4px 0; background: transparent; }
+QListView#comboPopup QScrollBar::handle:vertical { background: #c2d3d6; min-height: 24px; border-radius: 4px; }
+QListView#comboPopup QScrollBar::handle:vertical:hover { background: #98b6b7; }
+QListView#comboPopup QScrollBar::add-line:vertical,
+QListView#comboPopup QScrollBar::sub-line:vertical { height: 0; }
+QListView#comboPopup QScrollBar::add-page:vertical,
+QListView#comboPopup QScrollBar::sub-page:vertical { background: transparent; }

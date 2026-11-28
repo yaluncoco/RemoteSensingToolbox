@@ -30,7 +30,6 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QStyle,
-    QStyleFactory,
     QVBoxLayout,
     QWidget,
 )
@@ -45,6 +44,7 @@ from Toolbox.updater import UpdateChecker
 from Toolbox.update_ui import UpdateButton, UpdateDialog
 from Toolbox.update_installer import UpdateInstaller, launch_installer
 from Toolbox.version import APP_ID, APP_TITLE, APP_VERSION
+from Toolbox.appearance import apply_application_style
 
 
 CATEGORIES = ("全部", "图像处理", "点云处理", "林业功能", "数据集")
@@ -556,16 +556,6 @@ class ToolboxWindow(QMainWindow):
 
     def set_status(self, message: str) -> None:
         self.statusBar().showMessage(message, 5000)
-
-
-def apply_application_style(app: QApplication) -> None:
-    if "Fusion" in QStyleFactory.keys():
-        app.setStyle("Fusion")
-
-    style_path = resource_path("style.qss")
-    if os.path.exists(style_path):
-        with open(style_path, "r", encoding="utf-8") as handle:
-            app.setStyleSheet(handle.read())
 
 
 def main() -> int:

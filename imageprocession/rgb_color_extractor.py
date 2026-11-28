@@ -12,11 +12,11 @@ from PIL import Image, UnidentifiedImageError
 from PIL.Image import Resampling
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from Toolbox.task_support import bind_task
+from Toolbox.soft_widgets import SoftComboBox
 from PyQt5.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
-    QComboBox,
     QDesktopWidget,
     QFileDialog,
     QFrame,
@@ -351,7 +351,7 @@ class RgbColorExtractorWindow(QWidget):
         toolbar_layout.addWidget(QLabel("色差"))
         toolbar_layout.addWidget(self.color_delta_spin)
 
-        self.sort_mode_combo = QComboBox()
+        self.sort_mode_combo = SoftComboBox()
         self.sort_mode_combo.addItems(["按列从上到下", "按行从左到右"])
         self.sort_mode_combo.setToolTip("图例为多列排布时，通常选择按列排序。")
         self.sort_mode_combo.setMaximumWidth(140)

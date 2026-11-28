@@ -1,4 +1,5 @@
 from Toolbox.task_support import bind_task
+from Toolbox.soft_widgets import SoftComboBox
 from Toolbox.file_io import atomic_output
 import os
 from contextlib import ExitStack
@@ -12,7 +13,6 @@ from PyQt5.QtCore import QThread, Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
-    QComboBox,
     QDesktopWidget,
     QFileDialog,
     QFormLayout,
@@ -598,7 +598,7 @@ class ImageCutterWindow(QWidget):
         self.tile_size_edit.setToolTip("切片后每个小图像的边长（像素）。")
         params_layout.addRow(QLabel("切片大小 (像素):"), self.tile_size_edit)
 
-        self.edge_mode_combo = QComboBox()
+        self.edge_mode_combo = SoftComboBox()
         self.edge_mode_combo.addItem("补齐边缘，固定输出尺寸", EDGE_MODE_PAD)
         self.edge_mode_combo.addItem("跳过边缘不足尺寸", EDGE_MODE_SKIP)
         self.edge_mode_combo.setToolTip(

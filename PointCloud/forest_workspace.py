@@ -3,13 +3,13 @@ from pathlib import Path
 import numpy as np
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame,
+from PyQt5.QtWidgets import (QCheckBox, QFileDialog, QFormLayout, QFrame,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
     QScrollArea, QSlider, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from PointCloud.forest_viewer import ForestCanvas
 from Toolbox.task_support import bind_task
-from Toolbox.soft_widgets import SoftScrollArea
+from Toolbox.soft_widgets import SoftComboBox, SoftScrollArea
 
 
 FIELDS = [
@@ -80,7 +80,7 @@ class ForestWorkspace(QWidget):
         center_layout = QVBoxLayout(center)
         center_layout.setContentsMargins(0, 0, 8, 0)
         tools = QHBoxLayout()
-        self.color = QComboBox()
+        self.color = SoftComboBox()
         for label, data in (("实例颜色", "instance"), ("离地高度", "height"), ("原始 RGB", "rgb")):
             self.color.addItem(label, data)
         self.color.setToolTip("切换颜色只影响显示，不修改点云或标签")

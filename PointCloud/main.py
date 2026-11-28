@@ -9,7 +9,8 @@ os.environ["OMP_NUM_THREADS"] = '1'         # For OpenMP used by libraries like 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # To potentially avoid MKL math lib conflicts
 
 # Import QApplication and style factory
-from PyQt5.QtWidgets import QApplication, QStyleFactory
+from PyQt5.QtWidgets import QApplication
+from Toolbox.appearance import apply_application_style
 
 # Import the main GUI class
 from gui import PointCloudProcessor
@@ -30,15 +31,7 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
 
-    # Optional: Apply a modern style like Fusion
-    if 'Fusion' in QStyleFactory.keys():
-        try:
-            app.setStyle('Fusion')
-            print("Applied Fusion style.")
-        except Exception as e_style:
-            print(f"Could not apply Fusion style: {e_style}")
-    else:
-        print(f"Fusion style not available. Available styles: {QStyleFactory.keys()}")
+    apply_application_style(app)
 
     # Launch main window
     ex = PointCloudProcessor()

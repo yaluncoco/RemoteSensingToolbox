@@ -59,6 +59,8 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
     dashboard.show()
     try:
         check("dashboard", lambda: save_window(dashboard, "dashboard"))
+        from Toolbox.dropdown_self_test import check_dropdown_controls
+        check("dropdown-controls", lambda: check_dropdown_controls(app, screenshots))
 
         def update_network_runtime():
             import ssl
@@ -99,10 +101,15 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
                 if errors[error_start:]:
                     raise RuntimeError("\n".join(errors[error_start:]))
                 window = dashboard.open_windows[spec.id]
+                from PyQt5.QtWidgets import QComboBox
+                from Toolbox.soft_widgets import SoftComboBox
+                dropdowns = window.findChildren(QComboBox)
+                if any(not isinstance(combo, SoftComboBox) for combo in dropdowns):
+                    raise AssertionError(f"Unstyled dropdown in {spec.id}")
                 save_window(window, spec.id)
                 window.close()
                 app.sendPostedEvents(None, QEvent.DeferredDelete)
-                return spec.title
+                return {"title": spec.title, "styled_dropdowns": len(dropdowns)}
             check(f"window:{spec.id}", open_tool)
     finally:
         QMessageBox.critical = original_critical
