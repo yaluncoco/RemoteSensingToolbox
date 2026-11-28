@@ -39,15 +39,20 @@ class TrainingWorker(QThread):
 class TrainingWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("点云训练数据转换")
+        self.setWindowTitle("训练数据导出 / 转换")
         self.resize(740, 430)
         self.worker, self.result = None, None
         layout = QVBoxLayout(self)
+        heading = QLabel("03 · 训练数据导出 / 转换")
+        heading.setStyleSheet("font-size:22px;font-weight:600")
+        layout.addWidget(heading)
         intro = QLabel("从完整单木分割结果导出训练数据，或将本工具的 TXT 与 NumPy 互转。"
-                       "每行点属性、语义和实例标签保持对应；转换会逐点校验，不重新运行分割。")
+                       "可直接使用分割结果，无需先提取林业参数。每行点属性与标签保持对应；转换会逐点校验。")
         intro.setWordWrap(True)
         layout.addWidget(intro)
-        form = QFormLayout()
+        self.inputs = QWidget()
+        form = QFormLayout(self.inputs)
+        form.setContentsMargins(0, 0, 0, 0)
         self.source_edit, self.output_edit = QLineEdit(), QLineEdit()
         self.source_edit.setPlaceholderText("含 export.json 的分割目录，或含 manifest.json 的训练目录")
         for label, edit in (("已有结果", self.source_edit), ("输出位置", self.output_edit)):
@@ -61,7 +66,7 @@ class TrainingWindow(QWidget):
         for name, key in (("TXT", "txt"), ("NumPy", "numpy"), ("TXT ＋ NumPy", "both")):
             self.format.addItem(name, key)
         form.addRow("输出格式", self.format)
-        layout.addLayout(form)
+        layout.addWidget(self.inputs)
         note = QLabel("TXT 无表头，列顺序为 XYZ、强度、RGB、语义编号、实例编号、原始点索引、复核状态、"
                       "训练语义、训练实例、训练掩码。自动结果是伪标签；重点复核点默认忽略。"
                       "TXT 可能较大，NumPy 支持分块读取。每次转换创建新目录。")
@@ -85,6 +90,17 @@ class TrainingWindow(QWidget):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
+    def use_segmentation_result(self, result):
+        if self.worker is not None:
+            return False
+        self.source_edit.setText(result["output_directory"])
+        self.output_edit.setText(result["output_directory"])
+        self.result = None
+        self.folder_button.setEnabled(False)
+        self.progress.setValue(0)
+        self.status.setText("已带入单木分割结果；选择输出格式后开始导出 / 转换。")
+        return True
+
     def _choose(self, edit):
         value = QFileDialog.getExistingDirectory(self, "选择目录", edit.text())
         if value:
@@ -104,6 +120,7 @@ class TrainingWindow(QWidget):
         self.worker.status_signal.connect(self._status)
         bind_task(self, "worker", self._finished)
         self.run_button.setEnabled(False)
+        self.inputs.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.progress.setRange(0, 0)
         self.status.setText("正在检查源数据完整性…")
@@ -119,6 +136,7 @@ class TrainingWindow(QWidget):
 
     def _finished(self, result=None, error=""):
         self.run_button.setEnabled(True)
+        self.inputs.setEnabled(True)
         self.cancel_button.setEnabled(False)
         self.progress.setRange(0, 1)
         self.progress.setValue(0 if error else 1)

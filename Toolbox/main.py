@@ -47,7 +47,7 @@ from Toolbox.update_installer import UpdateInstaller, launch_installer
 from Toolbox.version import APP_ID, APP_TITLE, APP_VERSION
 
 
-CATEGORIES = ("全部", "图像处理", "点云处理", "数据集")
+CATEGORIES = ("全部", "图像处理", "点云处理", "林业功能", "数据集")
 WINDOW_LAYOUT_VERSION = 2
 CARD_MIN_WIDTH = 244
 _STANDARD_ICON_CACHE: dict[str, QIcon] = {}
@@ -115,7 +115,7 @@ class ToolCard(QFrame):
         icon_label.setPixmap(icon.pixmap(20, 20))
         header.addWidget(icon_label)
 
-        title = QLabel(spec.title)
+        title = QLabel(f"{spec.step:02d}  {spec.title}" if spec.step else spec.title)
         title.setObjectName("toolTitle")
         title.setWordWrap(True)
         header.addWidget(title, 1)
@@ -129,7 +129,7 @@ class ToolCard(QFrame):
         layout.addWidget(summary, 1)
 
         action_row = QHBoxLayout()
-        category = QLabel(spec.category)
+        category = QLabel(spec.group or spec.category)
         category.setObjectName("toolCategory")
         action_row.addWidget(category)
         action_row.addStretch(1)
@@ -170,7 +170,7 @@ class ToolboxWindow(QMainWindow):
         self.active_category = "全部"
         self.category_buttons: Dict[str, QPushButton] = {}
         self.search_index = {
-            spec.id: " ".join((spec.id, spec.title, spec.category, spec.summary, *spec.tags)).casefold()
+            spec.id: " ".join((spec.id, spec.title, spec.category, spec.group, spec.summary, *spec.tags)).casefold()
             for spec in TOOLS
         }
 
@@ -180,6 +180,26 @@ class ToolboxWindow(QMainWindow):
             card = ToolCard(spec, self.tools_view)
             card.open_requested.connect(self.open_tool)
             self.tool_cards[spec.id] = card
+            card.hide()
+        self.forestry_entry = QFrame(self.tools_view)
+        self.forestry_entry.setObjectName("toolCard")
+        entry_layout = QVBoxLayout(self.forestry_entry)
+        entry_layout.setContentsMargins(16, 14, 16, 14)
+        heading = QLabel("点云处理 · 林业功能")
+        heading.setObjectName("sectionTitle")
+        entry_layout.addWidget(heading)
+        description = QLabel("01 单木分割 → 02 林业参数提取 → 03 训练数据导出 / 转换")
+        description.setWordWrap(True)
+        entry_layout.addWidget(description)
+        enter = QPushButton("进入林业功能")
+        enter.clicked.connect(lambda: self.set_category("林业功能"))
+        entry_layout.addWidget(enter, alignment=Qt.AlignLeft)
+        self.forestry_entry.hide()
+        self.forestry_hint = QLabel("推荐先分割并复核单木，再按需提取参数或导出训练数据。"
+                                    "训练导出可直接使用分割结果，无需先提取参数。", self.tools_view)
+        self.forestry_hint.setObjectName("summaryLabel")
+        self.forestry_hint.setWordWrap(True)
+        self.forestry_hint.hide()
         self.empty_label = QLabel("没有找到匹配的工具，请尝试其他关键词。", self.tools_view)
         self.empty_label.setObjectName("emptyLabel")
         self.empty_label.setWordWrap(True)
@@ -239,7 +259,8 @@ class ToolboxWindow(QMainWindow):
         group = QButtonGroup(self)
         group.setExclusive(True)
         for category in CATEGORIES:
-            button = QPushButton(category)
+            button = QPushButton("    林业功能" if category == "林业功能" else category)
+            button.setAccessibleName("点云处理 / 林业功能" if category == "林业功能" else category)
             button.setObjectName("categoryButton")
             button.setCheckable(True)
             button.setMinimumHeight(34)
@@ -326,6 +347,7 @@ class ToolboxWindow(QMainWindow):
 
     def set_category(self, category: str) -> None:
         self.active_category = category
+        self.category_buttons[category].setChecked(True)
         for name, button in self.category_buttons.items():
             button.setProperty("active", name == category)
             repolish(button)
@@ -334,7 +356,10 @@ class ToolboxWindow(QMainWindow):
     def filtered_tools(self) -> Iterable[ToolSpec]:
         words = self.search_edit.text().casefold().split()
         for spec in TOOLS:
-            if self.active_category != "全部" and spec.category != self.active_category:
+            if self.active_category == "林业功能":
+                if spec.group != "林业功能":
+                    continue
+            elif self.active_category != "全部" and spec.category != self.active_category:
                 continue
             haystack = self.search_index[spec.id]
             if not all(word in haystack for word in words):
@@ -357,6 +382,8 @@ class ToolboxWindow(QMainWindow):
         total = len(TOOLS)
         self.page_title.setText("全部工具" if self.active_category == "全部" else self.active_category)
         self.summary_label.setText(f"{len(tools)} / {total} 个工具")
+        if self.active_category == "林业功能":
+            self.summary_label.setText("点云处理 / 林业功能 · 按推荐顺序排列")
 
         if not tools:
             self.tools_layout.addWidget(self.empty_label, 0, 0)
@@ -369,44 +396,70 @@ class ToolboxWindow(QMainWindow):
         width = self.tool_scroll.contentsRect().width() - self.style().pixelMetric(QStyle.PM_ScrollBarExtent)
         spacing = self.tools_layout.horizontalSpacing()
         columns = max(1, min(3, (width + spacing) // (CARD_MIN_WIDTH + spacing)))
+        grouped = self.active_category != "林业功能" and not self.search_edit.text().strip()
+        show_entry = grouped and any(spec.group == "林业功能" for spec in tools)
+        if show_entry:
+            tools = [spec for spec in tools if spec.group != "林业功能"]
+        offset = 0
+        if not grouped and any(spec.group == "林业功能" for spec in tools):
+            self.tools_layout.addWidget(self.forestry_hint, 0, 0, 1, columns)
+            self.forestry_hint.show()
+            offset = 1
         for index, spec in enumerate(tools):
             card = self.tool_cards[spec.id]
             row, col = divmod(index, columns)
-            self.tools_layout.addWidget(card, row, col)
+            self.tools_layout.addWidget(card, row + offset, col)
             card.show()
 
-        row_count = (len(tools) + columns - 1) // columns
+        row_count = (len(tools) + columns - 1) // columns + offset
+        if show_entry:
+            self.tools_layout.addWidget(self.forestry_entry, row_count, 0, 1, columns)
+            self.forestry_entry.show()
+            row_count += 1
         self.tools_layout.setRowStretch(row_count, 1)
         for column in range(columns):
             self.tools_layout.setColumnStretch(column, 1)
 
-    def open_tool(self, spec: ToolSpec) -> None:
+    def open_forestry_step(self, tool_id, result):
+        spec = next(s for s in TOOLS if s.id == tool_id)
+        self.open_tool(spec, forestry_result=result)
+
+    def open_tool(self, spec: ToolSpec, forestry_result=None) -> None:
         existing = self.open_windows.get(spec.id)
         if existing is not None:
+            accepted = forestry_result is None or existing.use_segmentation_result(forestry_result)
             existing.show()
             existing.activateWindow()
             existing.raise_()
-            self.set_status(f"已切换到：{spec.title}")
+            self.set_status(f"已切换到：{spec.title}" if accepted else "工具正在运行，未替换输入；完成后可再次带入分割结果。")
+            if not accepted:
+                QMessageBox.information(existing, "任务正在运行", "当前任务仍在运行，输入未替换。请完成或取消当前任务后，再从单木分割带入结果。")
             return
 
         if self._loader is not None:
             self.set_status("正在加载工具，请稍候…")
+            if forestry_result is not None:
+                QMessageBox.information(self, "正在加载工具", "请等待当前工具打开后，再点击继续按钮带入分割结果。")
             return
 
         self.set_status(f"正在打开：{spec.title}，首次加载可能需要几秒")
         self.loading_indicator.show()
         self.tools_view.setEnabled(False)
         self._loader = ToolLoader(spec)
-        bind_task(self, "_loader", lambda window_class, error: self._tool_loaded(spec, window_class, error))
+        bind_task(self, "_loader", lambda window_class, error: self._tool_loaded(spec, window_class, error, forestry_result))
         self._loader.start()
 
-    def _tool_loaded(self, spec, window_class, error):
+    def _tool_loaded(self, spec, window_class, error, forestry_result=None):
         self.loading_indicator.hide()
         self.tools_view.setEnabled(True)
         try:
             if error is not None:
                 raise error
             window = window_class()
+            if hasattr(window, "continue_requested"):
+                window.continue_requested.connect(self.open_forestry_step)
+            if forestry_result is not None:
+                window.use_segmentation_result(forestry_result)
             window.setAttribute(Qt.WA_DeleteOnClose, True)
             # Capture the Python state while the widget is alive. Looking up an
             # attribute on a destroyed Qt wrapper can abort the Windows process.
@@ -530,7 +583,12 @@ def main() -> int:
     parser.add_argument("--metrics-test-output", type=Path, help="Retain forestry parameter extraction self-test outputs here")
     parser.add_argument("--training-test-input", type=Path, help="Export aligned training data from this completed forest job")
     parser.add_argument("--training-test-output", type=Path, help="Retain training data self-test outputs here")
+    parser.add_argument("--forestry-flow-input", type=Path, help="Run all three forestry tools with real result handoffs")
+    parser.add_argument("--forestry-flow-output", type=Path, help="Retain the complete forestry flow outputs here")
     args = parser.parse_args()
+    if args.forestry_flow_input or args.forestry_flow_output:
+        if not (args.self_test and args.check_cloudcompare and args.forestry_flow_input and args.forestry_flow_output):
+            parser.error("Forestry flow checks require --self-test, --check-cloudcompare and both forestry-flow paths")
     if args.training_test_input or args.training_test_output:
         if not (args.self_test and args.training_test_input and args.training_test_output):
             parser.error("Training checks require --self-test, --training-test-input and --training-test-output")
@@ -563,7 +621,8 @@ def main() -> int:
         report = args.report or log_dir / "self-test.json"
         return run_self_test(app, report, args.screenshots, args.check_renderer, args.check_cloudcompare,
                              args.forestry_test_input, args.forestry_test_output,
-                             args.metrics_test_input, args.metrics_test_output, args.training_test_input, args.training_test_output)
+                             args.metrics_test_input, args.metrics_test_output, args.training_test_input, args.training_test_output,
+                             args.forestry_flow_input, args.forestry_flow_output)
 
     def handle_exception(exc_type, value, tb):
         logging.error("Unhandled exception", exc_info=(exc_type, value, tb))

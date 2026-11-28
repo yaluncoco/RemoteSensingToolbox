@@ -21,7 +21,8 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
                   cloudcompare_path: Path | None = None, forestry_input: Path | None = None,
                   forestry_output: Path | None = None, metrics_input: Path | None = None,
                   metrics_output: Path | None = None, training_input: Path | None = None,
-                  training_output: Path | None = None) -> int:
+                  training_output: Path | None = None, forestry_flow_input: Path | None = None,
+                  forestry_flow_output: Path | None = None) -> int:
     from Toolbox.main import ToolboxWindow
     from Toolbox.tool_registry import TOOLS
 
@@ -68,6 +69,23 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
         dashboard.resize(760, 600)
         dashboard.render_tools()
         check("dashboard-small-screen", lambda: save_window(dashboard, "dashboard-small"))
+        def forestry_navigation():
+            dashboard.set_category("点云处理")
+            if dashboard.forestry_entry.isHidden():
+                raise AssertionError("Missing forestry group entry")
+            dashboard.set_category("林业功能")
+            if [s.id for s in dashboard.filtered_tools()] != ["tree-segmentation", "forest-metrics", "forest-training"]:
+                raise AssertionError("Forestry order changed")
+            for width in (640, 960):
+                dashboard.resize(width, 600)
+                app.processEvents()
+                dashboard.render_tools()
+                save_window(dashboard, f"forestry-group-{width}")
+                if dashboard.tool_scroll.horizontalScrollBar().maximum() != 0:
+                    raise AssertionError("Forestry layout overflows horizontally")
+            dashboard.set_category("全部")
+            return "Dedicated point-cloud forestry group; ordered tools; narrow/wide layouts"
+        check("forestry-group-navigation", forestry_navigation)
         for spec in TOOLS:
             def open_tool(spec=spec):
                 error_start = len(errors)
@@ -326,6 +344,11 @@ def run_self_test(app, report_path: Path, screenshots: Path | None = None, check
 
         check("forestry-gui-complete-workflow", lambda: check_gui_workflow(app, cloudcompare_path))
         check("metrics-gui-csf-stems", lambda: check_metrics_gui(app, cloudcompare_path, raw=True))
+        from Toolbox.forestry_flow_self_test import check_forestry_flow
+        check("forestry-navigation-complete-workflow", lambda: check_forestry_flow(app, cloudcompare_path))
+        if forestry_flow_input:
+            check("forestry-navigation-real-data", lambda: check_forestry_flow(
+                app, cloudcompare_path, forestry_flow_input, forestry_flow_output, screenshots))
         if forestry_input:
             check("forestry-gui-real-data", lambda: check_gui_workflow(
                 app, cloudcompare_path, forestry_input, forestry_output,

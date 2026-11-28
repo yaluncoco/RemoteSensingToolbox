@@ -54,6 +54,8 @@ class MetricsWorker(QThread):
 
 
 class ForestMetricsWindow(QWidget):
+    continue_requested = pyqtSignal(str, object)
+
     def __init__(self, settings=None):
         super().__init__()
         self.setWindowTitle("林业参数提取")
@@ -61,6 +63,7 @@ class ForestMetricsWindow(QWidget):
         self.setMinimumSize(650, 500)
         self.settings = settings if settings is not None else QSettings(APP_ID, APP_ID)
         self.worker = self.result = self.output_directory = None
+        self._segmentation_result = None
         layout = QVBoxLayout(self)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -68,7 +71,7 @@ class ForestMetricsWindow(QWidget):
         body = QVBoxLayout(self.inputs)
         scroll.setWidget(self.inputs)
         layout.addWidget(scroll)
-        heading = QLabel("林业参数提取")
+        heading = QLabel("02 · 林业参数提取")
         heading.setStyleSheet("font-size:22px;font-weight:600")
         body.addWidget(heading)
         intro = QLabel("提取树高、胸径、冠幅、冠面积、冠体积及估算材积。可直接复用单木分割的编号，结果保存到新的任务文件夹。")
@@ -168,6 +171,39 @@ class ForestMetricsWindow(QWidget):
         self.folder_button.setEnabled(False)
         self.folder_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.output_directory)))
         layout.addWidget(self.folder_button)
+        self.training_button = QPushButton("03 · 使用同一分割结果导出训练数据")
+        self.training_button.setEnabled(False)
+        self.training_button.clicked.connect(self._continue_training)
+        layout.addWidget(self.training_button)
+        self.source_edit.textChanged.connect(self._source_changed)
+
+    def _source_changed(self):
+        self._segmentation_result = None
+        self.training_button.setEnabled(False)
+
+    def use_segmentation_result(self, result):
+        """Explicit navigation reuses IDs and cannot replace an active job."""
+        if self.worker is not None:
+            return False
+        self.source_edit.setText(result["output_directory"])
+        self.output_edit.setText(result["output_directory"])
+        self.mode.setCurrentIndex(self.mode.findData("reuse"))
+        self.label_edit.setText("instance_id")
+        self.ground_mode.setCurrentIndex(self.ground_mode.findData("auto"))
+        self.binary_edit.setText(result.get("binary", ""))
+        self.metres.setChecked(True)  # Successful segmentation requires metre coordinates.
+        self.result = self.output_directory = None
+        self.preview.setRowCount(0)
+        self.folder_button.setEnabled(False)
+        self.progress.setValue(0)
+        self._segmentation_result = result
+        self.training_button.setEnabled(True)
+        self.status_label.setText("已带入单木分割结果，使用原实例编号和地面分类。检查参数后点击“开始提取”。")
+        return True
+
+    def _continue_training(self):
+        if self._segmentation_result is not None and self.worker is None:
+            self.continue_requested.emit("forest-training", self._segmentation_result)
 
     @staticmethod
     def _path_row(edit, title, callback):
@@ -233,6 +269,7 @@ class ForestMetricsWindow(QWidget):
         self.worker.status_signal.connect(self._status)
         bind_task(self, "worker", self._finished)
         self.inputs.setEnabled(False)
+        self.training_button.setEnabled(False)
         self.run_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.progress.setRange(0, 0)
@@ -256,6 +293,7 @@ class ForestMetricsWindow(QWidget):
 
     def _finished(self, result=None, error=""):
         self.inputs.setEnabled(True)
+        self.training_button.setEnabled(self._segmentation_result is not None)
         self.run_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
         self.progress.setRange(0, 1)

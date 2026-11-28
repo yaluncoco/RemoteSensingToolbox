@@ -136,8 +136,11 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(checker.state, "error")
         self.assertIn("超时", checker.error)
         checker.api_url = self.base_url + "/new"
+        # The first request exercises the timeout. The retry checks recovery,
+        # not whether SSL-context creation and Windows scheduling fit in 150 ms.
+        checker._timeout.setInterval(1000)
         self.complete_check(checker)
-        self.assertTrue(checker.has_update)
+        self.assertTrue(checker.has_update, checker.error)
         self.assertEqual(checker.error, "")
 
     def test_repeated_clicks_share_one_request(self):

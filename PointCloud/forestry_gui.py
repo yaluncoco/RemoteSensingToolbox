@@ -78,6 +78,8 @@ class TerrainInput(_NoWheelMixin, QComboBox):
 
 
 class ForestryWindow(QWidget):
+    continue_requested = pyqtSignal(str, object)
+
     def __init__(self, settings=None):
         super().__init__()
         self.setWindowTitle("单木分割")
@@ -96,7 +98,7 @@ class ForestryWindow(QWidget):
         scroll.setWidget(content)
         shell.addWidget(scroll)
 
-        heading = QLabel("单木分割")
+        heading = QLabel("01 · 单木分割")
         heading.setStyleSheet("font-size: 22px; font-weight: 600;")
         layout.addWidget(heading)
         intro = QLabel("选择林地点云，自动分离地面、提取单木候选并编号。支持 LAS/LAZ 和单点云 BIN，结果另存到新的任务文件夹。")
@@ -196,7 +198,19 @@ class ForestryWindow(QWidget):
         outputs.addWidget(self.folder_button)
         outputs.addWidget(self.preview_button)
         shell.addLayout(outputs)
+        next_steps = QHBoxLayout()
+        self.metrics_button = QPushButton("02 · 提取林业参数")
+        self.training_button = QPushButton("03 · 导出 / 转换训练数据")
+        for button, tool_id in ((self.metrics_button, "forest-metrics"), (self.training_button, "forest-training")):
+            button.setEnabled(False)
+            button.clicked.connect(lambda checked=False, target=tool_id: self._continue(target))
+            next_steps.addWidget(button)
+        shell.addLayout(next_steps)
         self._engine_group = engine
+
+    def _continue(self, tool_id):
+        if self.result is not None and self.worker is None:
+            self.continue_requested.emit(tool_id, self.result)
 
     def _path_row(self, edit, text, callback):
         row = QHBoxLayout()
@@ -233,6 +247,8 @@ class ForestryWindow(QWidget):
         self._launch(None)
 
     def _start(self):
+        if self.worker is not None:
+            return
         source, parent = self.source_edit.text().strip(), self.output_edit.text().strip()
         if not Path(source).is_file():
             QMessageBox.warning(self, "输入无效", "请选择存在的 LAS / LAZ / BIN 文件。")
@@ -272,6 +288,8 @@ class ForestryWindow(QWidget):
         self.run_button.setEnabled(not busy)
         self.cancel_button.setEnabled(busy)
         self.preview_button.setEnabled(not busy and self.result is not None)
+        self.metrics_button.setEnabled(not busy and self.result is not None)
+        self.training_button.setEnabled(not busy and self.result is not None)
         self.progress.setRange(0, 0 if busy else 1)
 
     def _cancel(self):
@@ -317,6 +335,8 @@ class ForestryWindow(QWidget):
         self.log.append(text)
         self.folder_button.setEnabled(True)
         self.preview_button.setEnabled(True)
+        self.metrics_button.setEnabled(True)
+        self.training_button.setEnabled(True)
         if result.get("training"):
             self.log.append("逐点对齐的训练数据：" + result["training"]["directory"] + "；字段说明见 README.md。")
         correction = summary.get("refinement", {})

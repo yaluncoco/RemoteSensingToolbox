@@ -26,6 +26,8 @@ class ToolSpec:
     project_dir: Path
     icon_name: str
     tags: tuple[str, ...] = field(default_factory=tuple)
+    group: str = ""
+    step: int = 0
 
 
 TOOLS: tuple[ToolSpec, ...] = (
@@ -121,6 +123,8 @@ TOOLS: tuple[ToolSpec, ...] = (
         id="tree-segmentation",
         title="单木分割",
         category="点云处理",
+        group="林业功能",
+        step=1,
         summary="调用 CloudCompare 分离地面、逐树编号并导出单木点云。",
         module_name="PointCloud.forestry_gui",
         class_name="ForestryWindow",
@@ -129,26 +133,30 @@ TOOLS: tuple[ToolSpec, ...] = (
         tags=("树木", "分割", "林地", "TreeIso", "CSF", "CloudCompare", "LAS", "LAZ"),
     ),
     ToolSpec(
-        id="forest-training",
-        title="点云训练数据转换",
-        category="点云处理",
-        summary="导出逐点对齐的坐标与实例标签，支持 TXT 和 NumPy 互转。",
-        module_name="PointCloud.forestry_training_gui",
-        class_name="TrainingWindow",
-        project_dir=POINT_CLOUD_PROJECT_DIR,
-        icon_name="SP_FileDialogDetailedView",
-        tags=("训练", "标签", "实例分割", "TXT", "NumPy", "格式转换"),
-    ),
-    ToolSpec(
         id="forest-metrics",
         title="林业参数提取",
         category="点云处理",
+        group="林业功能",
+        step=2,
         summary="复用单木编号或检测树干，提取树高、胸径、冠幅和估算材积。",
         module_name="PointCloud.forest_metrics_gui",
         class_name="ForestMetricsWindow",
         project_dir=POINT_CLOUD_PROJECT_DIR,
         icon_name="SP_FileDialogDetailedView",
         tags=("树高", "胸径", "冠幅", "材积", "林业", "参数", "CSV", "Excel"),
+    ),
+    ToolSpec(
+        id="forest-training",
+        title="训练数据导出 / 转换",
+        category="点云处理",
+        group="林业功能",
+        step=3,
+        summary="按需导出逐点对齐的 TXT 标签或转换 NumPy；可直接使用分割结果。",
+        module_name="PointCloud.forestry_training_gui",
+        class_name="TrainingWindow",
+        project_dir=POINT_CLOUD_PROJECT_DIR,
+        icon_name="SP_FileDialogDetailedView",
+        tags=("训练", "标签", "实例分割", "TXT", "NumPy", "格式转换", "点云训练数据转换"),
     ),
 )
 
