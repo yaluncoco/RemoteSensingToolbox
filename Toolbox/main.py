@@ -185,10 +185,11 @@ class ToolboxWindow(QMainWindow):
         self.forestry_entry.setObjectName("toolCard")
         entry_layout = QVBoxLayout(self.forestry_entry)
         entry_layout.setContentsMargins(16, 14, 16, 14)
-        heading = QLabel("点云处理 · 林业功能")
+        self.forestry_entry.setMinimumHeight(160)
+        heading = QLabel("林业功能 · 实例与参数")
         heading.setObjectName("sectionTitle")
         entry_layout.addWidget(heading)
-        description = QLabel("01 单木分割 → 02 林业参数提取 → 03 训练数据导出 / 转换")
+        description = QLabel("单木分割、三维点选与参数查看、完整实例导出和训练标签转换。")
         description.setWordWrap(True)
         entry_layout.addWidget(description)
         enter = QPushButton("进入林业功能")
@@ -405,17 +406,15 @@ class ToolboxWindow(QMainWindow):
             self.tools_layout.addWidget(self.forestry_hint, 0, 0, 1, columns)
             self.forestry_hint.show()
             offset = 1
-        for index, spec in enumerate(tools):
-            card = self.tool_cards[spec.id]
+        cards = [self.tool_cards[spec.id] for spec in tools]
+        if show_entry:
+            cards.insert(1 if self.active_category == "点云处理" and cards else 0, self.forestry_entry)
+        for index, card in enumerate(cards):
             row, col = divmod(index, columns)
             self.tools_layout.addWidget(card, row + offset, col)
             card.show()
 
-        row_count = (len(tools) + columns - 1) // columns + offset
-        if show_entry:
-            self.tools_layout.addWidget(self.forestry_entry, row_count, 0, 1, columns)
-            self.forestry_entry.show()
-            row_count += 1
+        row_count = (len(cards) + columns - 1) // columns + offset
         self.tools_layout.setRowStretch(row_count, 1)
         for column in range(columns):
             self.tools_layout.setColumnStretch(column, 1)

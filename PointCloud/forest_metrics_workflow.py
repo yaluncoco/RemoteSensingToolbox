@@ -388,6 +388,9 @@ def run_metrics(source, output_parent, binary="", *, coordinates_in_metres=False
                 stage("export")
                 summary["export_fields"] = _export(normalized, root/"参数标注.laz", labels, heights, rows, check, notify)
                 summary["source_fields_verified"] = True
+            stage("scene")
+            from PointCloud.forest_scene import save_scene
+            save_scene(root, normalized, xyz, labels, heights, origin, rows, summary, check)
             check()
         if fingerprint(source) != before:
             raise ValueError("输入文件在运行期间发生变化，请使用稳定的源文件重试。")

@@ -71,16 +71,19 @@ def check_metrics_gui(app, binary="", source=None, output_parent=None, raw=False
             app.processEvents()
             window.run_button.click()
             deadline = time.monotonic()+1800
-            while window.worker is not None:
+            while window.worker is not None or window.scene_worker is not None:
                 app.processEvents()
                 QThread.msleep(10)
                 if time.monotonic() > deadline:
-                    window.worker.stop()
-                    window.worker.wait(30000)
+                    active = window.worker or window.scene_worker
+                    active.stop()
+                    active.wait(30000)
                     raise TimeoutError("林业参数 GUI 流程超时。")
             if messages or not window.result:
                 raise AssertionError(messages or window.status_label.text())
             result = window.result
+            if window.workspace.scene is None:
+                raise AssertionError("Interactive instance scene was not loaded: " + window.status_label.text())
             folder = Path(result["output_directory"])
             if not (folder/"result.json").is_file() or not window.folder_button.isEnabled():
                 raise AssertionError("GUI completion did not expose verified outputs")
@@ -105,6 +108,28 @@ def check_metrics_gui(app, binary="", source=None, output_parent=None, raw=False
                 app.processEvents()
                 if not window.grab().save(str(screenshot)):
                     raise AssertionError("Cannot render metrics result window")
+            if fixture:
+                tree_id = int(rows[0]["TreeID"])
+                workspace = window.workspace
+                workspace.select_tree(tree_id)
+                workspace.show_instance()
+                deadline = time.monotonic() + 60
+                while window.scene_worker is not None:
+                    app.processEvents()
+                    QThread.msleep(5)
+                    if time.monotonic() > deadline:
+                        raise TimeoutError("单木细节加载超时")
+                if len(workspace.canvas.scene["ids"]) != int(rows[0]["NPoints"]):
+                    raise AssertionError("Full-detail object lost points")
+                workspace.export_to(root, [tree_id])
+                deadline = time.monotonic() + 60
+                while window.scene_worker is not None:
+                    app.processEvents()
+                    QThread.msleep(5)
+                    if time.monotonic() > deadline:
+                        raise TimeoutError("完整单木导出超时")
+                if not workspace.last_export or not workspace.last_export["original_records_verified"]:
+                    raise AssertionError("Lossless single-tree export failed")
             return {"fixture":fixture, "raw":raw, "summary":summary, "output_directory":str(folder),
                     "gui_preview_rows":window.preview.rowCount()}
         finally:
@@ -112,5 +137,9 @@ def check_metrics_gui(app, binary="", source=None, output_parent=None, raw=False
             if window.worker is not None:
                 window.worker.stop()
                 window.worker.wait(30000)
+                app.processEvents()
+            if window.scene_worker is not None:
+                window.scene_worker.stop()
+                window.scene_worker.wait(30000)
                 app.processEvents()
             window.close()

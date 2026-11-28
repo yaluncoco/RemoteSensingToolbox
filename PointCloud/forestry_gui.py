@@ -6,7 +6,7 @@ from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
-    QScrollArea, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
+    QScrollArea, QSpinBox, QTextEdit, QToolButton, QAbstractSpinBox, QVBoxLayout, QWidget,
 )
 
 from PointCloud import cloudcompare
@@ -65,11 +65,35 @@ class _NoWheelMixin:
         event.ignore()
 
 
-class NumberInput(_NoWheelMixin, QDoubleSpinBox):
-    pass
+class _SoftStepper:
+    """Horizontal, generous +/- targets instead of tiny stacked native arrows."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.setMinimumHeight(36)
+        self.lineEdit().setTextMargins(0, 0, 60, 0)
+        self._minus, self._plus = QToolButton(self), QToolButton(self)
+        for button, text, step in ((self._minus, "−", -1), (self._plus, "+", 1)):
+            button.setText(text)
+            button.setObjectName("stepButton")
+            button.setAccessibleName("减少" if step < 0 else "增加")
+            button.setAutoRepeat(True)
+            button.clicked.connect(lambda _, d=step: self.stepBy(d))
+            button.setCursor(Qt.PointingHandCursor)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._minus.setGeometry(self.width()-60, 4, 26, self.height()-8)
+        self._plus.setGeometry(self.width()-31, 4, 26, self.height()-8)
 
 
-class IntegerInput(_NoWheelMixin, QSpinBox):
+class NumberInput(_SoftStepper, _NoWheelMixin, QDoubleSpinBox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setSingleStep(.01)
+
+
+class IntegerInput(_SoftStepper, _NoWheelMixin, QSpinBox):
     pass
 
 

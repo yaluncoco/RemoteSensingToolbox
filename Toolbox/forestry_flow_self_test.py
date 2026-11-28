@@ -78,7 +78,7 @@ def check_forestry_flow(app, binary, source=None, output_parent=None, screenshot
             require(metrics.mode.currentData() == "reuse", "Metrics would regroup the trees")
             require(metrics.label_edit.text() == "instance_id", "Metrics lost the original label field")
             metrics.run_button.click()
-            wait(lambda: metrics.worker is None)
+            wait(lambda: metrics.worker is None and metrics.scene_worker is None)
             require(metrics.result, metrics.status_label.text())
             require(metrics.result["summary"]["tree_count"] == result["segmentation"]["candidate_tree_count"], "Tree count changed during handoff")
             require(metrics.result["summary"]["source_fields_verified"], "Metrics source fields not verified")

@@ -1,17 +1,17 @@
 """Forestry measurements as a separate point-cloud tool."""
-import csv
 from pathlib import Path
 
 from PyQt5.QtCore import QSettings, QThread, QUrl, pyqtSignal
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtWidgets import (QCheckBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+    QTabWidget, QVBoxLayout, QWidget)
 
 from PointCloud import cloudcompare
 from PointCloud.forest_metrics import MetricOptions
 from PointCloud.forestry_gui import NumberInput, IntegerInput, TerrainInput
 from Toolbox.task_support import bind_task
+from Toolbox.soft_widgets import SoftScrollArea
 from Toolbox.version import APP_ID
 
 
@@ -21,6 +21,7 @@ STAGES = {"reading":"读取点云与编号", "ground":"建立地形并计算离�
           "export":"导出并校验原始属性", "complete":"提取完成",
           "sampling":"准备地面过滤采样", "reading_bin":"读取 BIN 工作副本",
           "validating_bin":"校验 BIN 格式转换"}
+STAGES["scene"] = "建立可交互单木对象与点云索引"
 
 QUALITY_TEXT = {"ok":"通过", "insufficient_points":"切片点不足", "no_circle":"未拟合出圆",
     "insufficient_inliers":"有效内点不足", "weak_inliers":"内点支持不足", "partial_arc":"圆弧覆盖不足",
@@ -59,19 +60,45 @@ class ForestMetricsWindow(QWidget):
     def __init__(self, settings=None):
         super().__init__()
         self.setWindowTitle("林业参数提取")
-        self.resize(880, 850)
-        self.setMinimumSize(650, 500)
+        self.resize(1440, 940)
+        self.setMinimumSize(1000, 650)
+        self.setObjectName("metricsWindow")
         self.settings = settings if settings is not None else QSettings(APP_ID, APP_ID)
         self.worker = self.result = self.output_directory = None
+        self.scene_worker = None
         self._segmentation_result = None
         layout = QVBoxLayout(self)
-        scroll = QScrollArea()
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
+        header = QHBoxLayout()
+        heading = QLabel("林业参数 · 实例工作台")
+        heading.setObjectName("pageTitle")
+        header.addWidget(heading)
+        header.addStretch()
+        self.new_button = QPushButton("新建参数分析")
+        self.new_button.clicked.connect(lambda: self.tabs.setCurrentIndex(1))
+        self.open_result_button = QPushButton("打开已有结果")
+        self.open_result_button.setObjectName("secondaryButton")
+        self.open_result_button.clicked.connect(self._open_result)
+        header.addWidget(self.new_button)
+        header.addWidget(self.open_result_button)
+        layout.addLayout(header)
+        self.tabs = QTabWidget()
+        from PointCloud.forest_workspace import ForestWorkspace
+        self.workspace = ForestWorkspace(self, QUALITY_TEXT)
+        self.workspace.status_changed.connect(lambda text: self.status_label.setText(text))
+        self.workspace.busy_changed.connect(self._scene_busy)
+        self.workspace.loaded.connect(self._scene_loaded)
+        self.tabs.addTab(self.workspace, "实例与参数")
+        scroll = SoftScrollArea()
+        scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setWidgetResizable(True)
         self.inputs = QWidget()
         body = QVBoxLayout(self.inputs)
         scroll.setWidget(self.inputs)
-        layout.addWidget(scroll)
-        heading = QLabel("02 · 林业参数提取")
+        self.tabs.addTab(scroll, "提取设置")
+        layout.addWidget(self.tabs, 1)
+        heading = QLabel("新建林业参数分析")
         heading.setStyleSheet("font-size:22px;font-weight:600")
         body.addWidget(heading)
         intro = QLabel("提取树高、胸径、冠幅、冠面积、冠体积及估算材积。可直接复用单木分割的编号，结果保存到新的任务文件夹。")
@@ -138,6 +165,9 @@ class ForestMetricsWindow(QWidget):
             edit.setRange(low, high)
             edit.setValue(getattr(defaults, name))
             edit.setSuffix(suffix)
+            edit.setSingleStep({"breast_height": .05, "fit_tolerance": .002, "min_arc": 5.,
+                                "ground_support": .25, "max_assign_distance": .25,
+                                "min_height": .25, "form_factor": .05}.get(name, .01))
             self.controls[name] = edit
             form.addRow(title, edit)
         self.terrain = TerrainInput()
@@ -155,7 +185,7 @@ class ForestMetricsWindow(QWidget):
         self.cancel_button.setEnabled(False)
         actions.addWidget(self.run_button)
         actions.addWidget(self.cancel_button)
-        layout.addLayout(actions)
+        actions.addStretch()
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -163,19 +193,53 @@ class ForestMetricsWindow(QWidget):
         self.status_label = QLabel("就绪")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
-        self.preview = QTableWidget(0, 0)
-        self.preview.setMaximumHeight(170)
-        self.preview.setEditTriggers(QTableWidget.NoEditTriggers)
-        layout.addWidget(self.preview)
+        self.preview = self.workspace.table
         self.folder_button = QPushButton("打开结果文件夹")
         self.folder_button.setEnabled(False)
         self.folder_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.output_directory)))
-        layout.addWidget(self.folder_button)
+        self.folder_button.setObjectName("secondaryButton")
+        actions.addWidget(self.folder_button)
         self.training_button = QPushButton("03 · 使用同一分割结果导出训练数据")
         self.training_button.setEnabled(False)
         self.training_button.clicked.connect(self._continue_training)
-        layout.addWidget(self.training_button)
+        self.training_button.setObjectName("secondaryButton")
+        actions.addWidget(self.training_button)
+        layout.addLayout(actions)
         self.source_edit.textChanged.connect(self._source_changed)
+
+    def _scene_busy(self, busy):
+        self.inputs.setEnabled(not busy)
+        self.open_result_button.setEnabled(not busy)
+        self.new_button.setEnabled(not busy)
+        self.run_button.setEnabled(not busy)
+        self.cancel_button.setEnabled(busy)
+        self.training_button.setEnabled(not busy and self._segmentation_result is not None)
+        self.progress.setRange(0, 0 if busy else 1)
+        if not busy:
+            self.progress.setValue(1)
+
+    def _scene_loaded(self, scene):
+        self.output_directory = scene["root"]
+        self.result = {"output_directory": scene["root"], "summary": scene["summary"]}
+        self.folder_button.setEnabled(True)
+
+    def _open_result(self):
+        if self.worker is not None or self.scene_worker is not None:
+            return
+        path = QFileDialog.getExistingDirectory(self, "打开已完成的参数结果目录", self.output_directory or "")
+        if path:
+            self.open_result_directory(path)
+
+    def open_result_directory(self, path):
+        if self.worker is not None or self.scene_worker is not None:
+            return False
+        self._segmentation_result = None
+        self.result = self.output_directory = None
+        self.folder_button.setEnabled(False)
+        self.training_button.setEnabled(False)
+        self.tabs.setCurrentIndex(0)
+        self.workspace.load(path)
+        return True
 
     def _source_changed(self):
         self._segmentation_result = None
@@ -183,7 +247,7 @@ class ForestMetricsWindow(QWidget):
 
     def use_segmentation_result(self, result):
         """Explicit navigation reuses IDs and cannot replace an active job."""
-        if self.worker is not None:
+        if self.worker is not None or self.scene_worker is not None:
             return False
         self.source_edit.setText(result["output_directory"])
         self.output_edit.setText(result["output_directory"])
@@ -193,7 +257,8 @@ class ForestMetricsWindow(QWidget):
         self.binary_edit.setText(result.get("binary", ""))
         self.metres.setChecked(True)  # Successful segmentation requires metre coordinates.
         self.result = self.output_directory = None
-        self.preview.setRowCount(0)
+        self.workspace.clear()
+        self.tabs.setCurrentIndex(1)
         self.folder_button.setEnabled(False)
         self.progress.setValue(0)
         self._segmentation_result = result
@@ -202,7 +267,7 @@ class ForestMetricsWindow(QWidget):
         return True
 
     def _continue_training(self):
-        if self._segmentation_result is not None and self.worker is None:
+        if self._segmentation_result is not None and self.worker is None and self.scene_worker is None:
             self.continue_requested.emit("forest-training", self._segmentation_result)
 
     @staticmethod
@@ -243,7 +308,7 @@ class ForestMetricsWindow(QWidget):
             self.output_edit.setText(path)
 
     def _start(self):
-        if self.worker is not None:
+        if self.worker is not None or self.scene_worker is not None:
             return
         try:
             source, output = self.source_edit.text().strip(), self.output_edit.text().strip()
@@ -261,7 +326,9 @@ class ForestMetricsWindow(QWidget):
         self.settings.setValue("metrics/output_parent", output)
         self.result = self.output_directory = None
         self.folder_button.setEnabled(False)
-        self.preview.setRowCount(0)
+        self.workspace.clear()
+        self.open_result_button.setEnabled(False)
+        self.new_button.setEnabled(False)
         self.worker = MetricsWorker(dict(source=source, output_parent=output, binary=self.binary_edit.text().strip(),
             coordinates_in_metres=True, mode=self.mode.currentData(), label_field=self.label_edit.text().strip(),
             ground_mode=self.ground_mode.currentData(), terrain=self.terrain.currentData(),
@@ -286,8 +353,9 @@ class ForestMetricsWindow(QWidget):
         self.status_label.setText(text)
 
     def _cancel(self):
-        if self.worker:
-            self.worker.stop()
+        active = self.worker or self.scene_worker
+        if active:
+            active.stop()
             self.cancel_button.setEnabled(False)
             self.status_label.setText("正在停止并关闭输出文件…")
 
@@ -296,6 +364,8 @@ class ForestMetricsWindow(QWidget):
         self.training_button.setEnabled(self._segmentation_result is not None)
         self.run_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
+        self.open_result_button.setEnabled(True)
+        self.new_button.setEnabled(True)
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         self.folder_button.setEnabled(bool(self.output_directory))
@@ -309,21 +379,5 @@ class ForestMetricsWindow(QWidget):
         self.status_label.setText(f"完成：{summary['tree_count']} 个单木编号；{summary['accepted_dbh_count']} 个胸径通过检查；"
                                   f"{summary['flagged_count']} 个结果有质量提示。用时 {summary['seconds']:.1f} 秒。")
         self.progress.setValue(1)
-        with (Path(self.output_directory)/"林业参数.csv").open(encoding="utf-8-sig", newline="") as stream:
-            rows = list(csv.DictReader(stream))[:200]
-        columns = [("TreeID", "编号"), ("Height_m", "树高(m)"), ("DBH_cm", "胸径(cm)"),
-                   ("CrownDiameter_m", "冠幅(m)"), ("DBH_status", "胸径状态"), ("QualityFlags", "质量提示")]
-        self.preview.setColumnCount(len(columns))
-        self.preview.setHorizontalHeaderLabels([title for _, title in columns])
-        self.preview.setRowCount(len(rows))
-        for i, row in enumerate(rows):
-            for j, (name, _) in enumerate(columns):
-                value = row[name]
-                if name == "DBH_status":
-                    value = QUALITY_TEXT.get(value, value)
-                elif name == "QualityFlags":
-                    value = "；".join(QUALITY_TEXT.get(flag.removeprefix("dbh_"), flag) for flag in value.split("|") if flag)
-                if name not in ("TreeID", "DBH_status", "QualityFlags") and value:
-                    value = f"{float(value):.2f}"
-                self.preview.setItem(i, j, QTableWidgetItem(value or "—"))
-        self.preview.resizeColumnsToContents()
+        self.tabs.setCurrentIndex(0)
+        self.workspace.load(self.output_directory)

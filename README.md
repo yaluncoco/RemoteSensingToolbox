@@ -8,8 +8,8 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 
 在[本项目 GitHub Release 的 Assets](https://github.com/yaluncoco/RemoteSensingToolbox/releases/latest) 中直接下载：
 
-- `RemoteSensingToolbox-1.6.1-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
-- `RemoteSensingToolbox-1.6.1-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
+- `RemoteSensingToolbox-1.7.0-windows-x64-setup.exe`：Windows 10/11 64 位安装包，安装到当前用户目录，无需管理员权限。
+- `RemoteSensingToolbox-1.7.0-windows-x64-portable.zip`：便携版，完整解压后运行 `RemoteSensingToolbox.exe`。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。
 
 每个正式版本在本项目 Release 的 Assets 中提供安装包、便携包、校验文件和验证报告；v1.5.0 起软件内更新也使用本项目。原独立发行仓库目前不可用，旧版若检查更新失败，请手动下载本版安装包升级一次。
@@ -31,7 +31,7 @@ Windows 桌面工具，集中处理遥感影像、矢量标签、VOC 数据集�
 | VOC 数据集制作 | 图像/标签整理、可复现的训练验证划分、16 位整数标签 |
 | 点云处理工作台 | 预览、去噪、格式转换、ScanNet、NPY 查看、标签合并、四种下采样 |
 | 单木分割 | 配置 CloudCompare 路径，CSF + TreeIso 与多切片树干约束校正，减少粘连与重复分株，完整标注和逐树 LAZ 导出 |
-| 林业参数提取 | 独立提取树高、胸径、冠幅、冠面积、冠体积和估算材积，输出 CSV/Excel/LAZ 与质量提示 |
+| 林业参数提取 | 三维点选单木、右侧完整参数、独立查看与原始精度实例导出，支持分析和结果重开 |
 | 训练数据导出 / 转换 | 逐点对齐的坐标、语义和实例标签导出，TXT / NumPy 互转，保留原始点索引和忽略掩码 |
 
 v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安装后的程序完成真实数据分割和逐树导出验证。单木分割需要本机另行安装带 CSF、TreeIso 插件的 CloudCompare；可在工具窗口保存程序路径。支持 LAS/LAZ 及单点云 BIN，按文件内容识别格式，扩展名误写为 `.laz` 的 BIN 会自动转换。使用方法与输出说明见 [单木分割流程](docs/TREE-SEGMENTATION.md)。
@@ -53,6 +53,7 @@ v1.4.1 修复了 v1.4.0 安装版在 SVG 绘图阶段失败的问题，已用安
 - 分割完成后直接带入结果；参数提取明确复用原实例编号与地面分类，从参数提取继续训练导出仍使用原分割目录。
 - 运行中的任务拒绝替换输入；训练转换期间锁定输入与格式。手动更换参数提取的输入会清除旧的交接关系。
 - 界面、真实流程与发行验证见 [v1.6.1 验证记录](docs/VALIDATION-1.6.1.md)。
+- v1.7.0 新增三维点选单木、完整参数检查和实例导出，见 [林业工作台说明](docs/FOREST-METRICS.md) 与 [验证记录](docs/VALIDATION-1.7.0.md)。
 
 ![林业功能](docs/assets/forestry-group.png)
 
